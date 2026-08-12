@@ -642,10 +642,6 @@ class GeminiLiveService {
     if (!_connected || _microphoneRunning) return;
 
     _recorder = AudioRecorder();
-    if (!await _recorder!.hasPermission()) {
-      onError?.call('Microphone permission denied.');
-      return;
-    }
 
     final stream = await _recorder!.startStream(
       const RecordConfig(
