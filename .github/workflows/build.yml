@@ -1,194 +1,57 @@
-name: Build Siri Android APK
+name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
-
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   build:
-    name: Build Siri APK
     runs-on: ubuntu-latest
 
     steps:
-
-      # ------------------------------------------------
-      # 1. Checkout
-      # ------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ------------------------------------------------
-      # 2. Setup Flutter
-      # ------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.0"
+          flutter-version: '3.27.0'
           channel: stable
           cache: true
 
+      - name: Check Flutter
+        run: flutter --version
 
-      # ------------------------------------------------
-      # 3. Flutter version
-      # ------------------------------------------------
-      - name: Flutter version
-        run: |
-          flutter --version
-          dart --version
-
-
-      # ------------------------------------------------
-      # 4. Generate Android project
-      # ------------------------------------------------
       - name: Generate Android project
-        run: |
-          flutter create \
-            --platforms=android \
-            --org com.siri \
-            --project-name siri \
-            .
+        run: flutter create --platforms=android .
 
-
-      # ------------------------------------------------
-      # 5. Set Android application name
-      # ------------------------------------------------
-      - name: Set app name to Siri
-        shell: bash
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="Siri"/' "$MANIFEST"
-          fi
-
-
-      # ------------------------------------------------
-      # 6. Add microphone permission
-      # ------------------------------------------------
-      - name: Add microphone permission
-        shell: bash
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          if ! grep -q "android.permission.RECORD_AUDIO" "$MANIFEST"; then
-            sed -i '/<manifest/a\
-            <uses-permission android:name="android.permission.RECORD_AUDIO"/>' "$MANIFEST"
-          fi
-
-          echo "AndroidManifest:"
-          cat "$MANIFEST"
-
-
-      # ------------------------------------------------
-      # 7. Set minimum Android SDK 23
-      # ------------------------------------------------
       - name: Set Android minSdk 23
-        shell: bash
         run: |
+          echo "Setting minSdk to 23..."
 
-          if [ -f "android/app/build.gradle.kts" ]; then
-
-            echo "Using Kotlin Gradle file"
-
-            sed -i \
-              's/minSdk = flutter.minSdkVersion/minSdk = 23/g' \
-              android/app/build.gradle.kts
-
-          elif [ -f "android/app/build.gradle" ]; then
-
-            echo "Using Groovy Gradle file"
-
-            sed -i \
-              's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' \
-              android/app/build.gradle
-
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle
           else
-
-            echo "ERROR: Android Gradle file not found"
-
+            echo "ERROR: android/app/build.gradle not found"
             find android -maxdepth 3 -type f | sort
-
             exit 1
-
           fi
 
+          echo "Checking minSdk:"
+          grep -n "minSdk" android/app/build.gradle || true
 
-      # ------------------------------------------------
-      # 8. Show Android files
-      # ------------------------------------------------
-      - name: Check Android files
-        run: |
-          echo "Android project:"
-          find android -maxdepth 3 -type f | sort
+      - name: Clean project
+        run: flutter clean
 
-
-      # ------------------------------------------------
-      # 9. Clean
-      # ------------------------------------------------
-      - name: Clean Flutter
-        run: |
-          flutter clean
-          rm -rf build
-          rm -rf .dart_tool
-
-
-      # ------------------------------------------------
-      # 10. Get dependencies
-      # ------------------------------------------------
       - name: Get dependencies
-        run: |
-          flutter pub get
+        run: flutter pub get
 
+      - name: Build APK
+        run: flutter build apk --release
 
-      # ------------------------------------------------
-      # 11. Analyze
-      # ------------------------------------------------
-      - name: Analyze Flutter project
-        run: |
-          flutter analyze
-        continue-on-error: true
-
-
-      # ------------------------------------------------
-      # 12. Build APK
-      # ------------------------------------------------
-      - name: Build Siri APK
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "ERROR: GEMINI_API_KEY GitHub Secret is missing."
-            echo "Go to:"
-            echo "Settings -> Secrets and variables -> Actions"
-            echo "and create GEMINI_API_KEY"
-            exit 1
-          fi
-
-          flutter build apk \
-            --release \
-            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
-
-
-      # ------------------------------------------------
-      # 13. Check APK
-      # ------------------------------------------------
-      - name: Check APK
-        run: |
-          ls -lh build/app/outputs/flutter-apk/
-          file build/app/outputs/flutter-apk/app-release.apk
-
-
-      # ------------------------------------------------
-      # 14. Upload APK
-      # ------------------------------------------------
-      - name: Upload Siri APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Siri-Android-APK
+          name: release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
