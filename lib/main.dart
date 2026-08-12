@@ -1,60 +1,98 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const VoiceAssistantApp());
+
+  runApp(const SiriApp());
 }
 
-class VoiceAssistantApp extends StatelessWidget {
-  const VoiceAssistantApp({super.key});
+
+// ============================================================
+// SIRI APP
+// ============================================================
+
+class SiriApp extends StatelessWidget {
+  const SiriApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Voice AI Assistant',
+
+      title: 'Siri',
+
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF080808),
+
+        scaffoldBackgroundColor:
+            const Color(0xFF080808),
+
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepPurple,
           brightness: Brightness.dark,
         ),
+
         useMaterial3: true,
       ),
-      home: const AssistantHome(),
+
+      home: const SiriHome(),
     );
   }
 }
 
-class AssistantHome extends StatefulWidget {
-  const AssistantHome({super.key});
+
+// ============================================================
+// SIRI HOME
+// ============================================================
+
+class SiriHome extends StatefulWidget {
+  const SiriHome({super.key});
 
   @override
-  State<AssistantHome> createState() => _AssistantHomeState();
+  State<SiriHome> createState() => _SiriHomeState();
 }
 
-class _AssistantHomeState extends State<AssistantHome> {
+
+class _SiriHomeState extends State<SiriHome> {
+
   late final GeminiLiveService _gemini;
 
-  final TextEditingController _textController = TextEditingController();
+  final TextEditingController _controller =
+      TextEditingController();
+
+  final ScrollController _scrollController =
+      ScrollController();
 
   bool _connected = false;
+
   bool _listening = false;
+
   bool _thinking = false;
 
   String _status = 'Disconnected';
 
   final List<ChatMessage> _messages = [];
+
+
+  // ==========================================================
+  // YOUR PHOTO URL
+  // ==========================================================
+
+  static const String siriPhotoUrl =
+      'https://share.google/DNOaI68o2tmiDFaoU';
+
+
+  // ==========================================================
+  // INIT
+  // ==========================================================
 
   @override
   void initState() {
@@ -65,22 +103,33 @@ class _AssistantHomeState extends State<AssistantHome> {
         'GEMINI_API_KEY',
         defaultValue: '',
       ),
+
       model: 'gemini-3.1-flash-live-preview',
     );
 
+
+    // Gemini text response
     _gemini.onText = (text) {
+
       if (!mounted) return;
 
       setState(() {
+
         _thinking = false;
 
         if (_messages.isNotEmpty &&
-            _messages.last.role == MessageRole.assistant) {
-          _messages.last = ChatMessage(
+            _messages.last.role ==
+                MessageRole.assistant) {
+
+          _messages[_messages.length - 1] =
+              ChatMessage(
             role: MessageRole.assistant,
-            text: '${_messages.last.text}$text',
+            text:
+                '${_messages.last.text}$text',
           );
+
         } else {
+
           _messages.add(
             ChatMessage(
               role: MessageRole.assistant,
@@ -89,9 +138,14 @@ class _AssistantHomeState extends State<AssistantHome> {
           );
         }
       });
+
+      _scrollToBottom();
     };
 
+
+    // Status
     _gemini.onStatus = (status) {
+
       if (!mounted) return;
 
       setState(() {
@@ -99,82 +153,141 @@ class _AssistantHomeState extends State<AssistantHome> {
       });
     };
 
+
+    // Connected
     _gemini.onConnected = () {
+
       if (!mounted) return;
 
       setState(() {
+
         _connected = true;
+
         _status = 'Connected';
       });
     };
 
+
+    // Disconnected
     _gemini.onDisconnected = () {
+
       if (!mounted) return;
 
       setState(() {
+
         _connected = false;
-        _status = 'Disconnected';
-        _thinking = false;
+
         _listening = false;
+
+        _thinking = false;
+
+        _status = 'Disconnected';
       });
     };
 
+
+    // Error
     _gemini.onError = (error) {
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(error),
+        ),
       );
     };
   }
 
+
+  // ==========================================================
+  // DISPOSE
+  // ==========================================================
+
   @override
   void dispose() {
-    _textController.dispose();
+
+    _controller.dispose();
+
+    _scrollController.dispose();
+
     _gemini.dispose();
+
     super.dispose();
   }
 
+
+  // ==========================================================
+  // CONNECT
+  // ==========================================================
+
   Future<void> _connect() async {
-    if (const String.fromEnvironment(
+
+    const apiKey =
+        String.fromEnvironment(
       'GEMINI_API_KEY',
       defaultValue: '',
-    ).isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'GEMINI_API_KEY missing. Run with --dart-define.',
-          ),
-        ),
+    );
+
+    if (apiKey.isEmpty) {
+
+      _showMessage(
+        'Gemini API key missing.\n'
+        'GitHub Secret GEMINI_API_KEY check karo.',
       );
+
       return;
     }
 
     await _gemini.connect();
   }
 
-  Future<void> _requestMicrophone() async {
-    final status = await Permission.microphone.request();
+
+  // ==========================================================
+  // MICROPHONE PERMISSION
+  // ==========================================================
+
+  Future<bool> _requestMicrophone() async {
+
+    final status =
+        await Permission.microphone.request();
 
     if (!status.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Microphone permission is required.'),
-        ),
+
+      _showMessage(
+        'Microphone permission required.',
       );
+
+      return false;
     }
+
+    return true;
   }
 
+
+  // ==========================================================
+  // SEND TEXT
+  // ==========================================================
+
   Future<void> _sendText() async {
-    final text = _textController.text.trim();
+
+    final text =
+        _controller.text.trim();
 
     if (text.isEmpty) return;
 
+
     if (!_connected) {
+
       await _connect();
+
+      if (!_connected) return;
     }
 
+
     setState(() {
+
       _messages.add(
         ChatMessage(
           role: MessageRole.user,
@@ -185,134 +298,236 @@ class _AssistantHomeState extends State<AssistantHome> {
       _thinking = true;
     });
 
-    _textController.clear();
+
+    _controller.clear();
+
+    _scrollToBottom();
+
 
     await _gemini.sendText(text);
   }
 
-  Future<void> _toggleListening() async {
+
+  // ==========================================================
+  // MICROPHONE
+  // ==========================================================
+
+  Future<void> _toggleMicrophone() async {
+
     if (!_connected) {
+
       await _connect();
+
+      if (!_connected) return;
+    }
+
+
+    final permission =
+        await _requestMicrophone();
+
+    if (!permission) return;
+
+
+    if (_listening) {
+
+      await _gemini.stopMicrophone();
+
+      if (!mounted) return;
+
+      setState(() {
+        _listening = false;
+      });
+
       return;
     }
 
-    await _requestMicrophone();
 
-    setState(() {
-      _listening = !_listening;
-    });
+    try {
 
-    if (_listening) {
       await _gemini.startMicrophone();
-    } else {
-      await _gemini.stopMicrophone();
+
+      if (!mounted) return;
+
+      setState(() {
+
+        _listening = true;
+
+        _status = 'Listening...';
+      });
+
+    } catch (e) {
+
+      _showMessage(
+        'Microphone error: $e',
+      );
     }
   }
 
-  Future<void> _openOverlaySettings() async {
-    if (!Platform.isAndroid) return;
 
-    const intent = AndroidIntent(
-      action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
+  // ==========================================================
+  // SCROLL
+  // ==========================================================
+
+  void _scrollToBottom() {
+
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) {
+
+      if (!_scrollController.hasClients) {
+        return;
+      }
+
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration:
+            const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+
+  // ==========================================================
+  // MESSAGE
+  // ==========================================================
+
+  void _showMessage(String message) {
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
     );
-
-    await intent.launch();
   }
 
-  Future<void> _openNotificationSettings() async {
-    if (!Platform.isAndroid) return;
 
-    const intent = AndroidIntent(
-      action: 'android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
-    );
-
-    await intent.launch();
-  }
-
-  Future<void> _requestCallPermission() async {
-    await Permission.phone.request();
-  }
-
-  Future<void> _requestSmsPermission() async {
-    await Permission.sms.request();
-  }
+  // ==========================================================
+  // BUILD
+  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
+
       appBar: AppBar(
-        title: const Text(
-          'Voice AI',
-          style: TextStyle(fontWeight: FontWeight.bold),
+
+        titleSpacing: 16,
+
+        title: Row(
+          children: [
+
+            // ==================================================
+            // SIRI PHOTO
+            // ==================================================
+
+            ClipOval(
+              child: Image.network(
+                siriPhotoUrl,
+
+                width: 42,
+                height: 42,
+
+                fit: BoxFit.cover,
+
+                errorBuilder:
+                    (_, __, ___) {
+
+                  return Container(
+                    width: 42,
+                    height: 42,
+
+                    decoration:
+                        const BoxDecoration(
+                      shape: BoxShape.circle,
+
+                      gradient:
+                          LinearGradient(
+                        colors: [
+                          Colors.deepPurple,
+                          Colors.purpleAccent,
+                        ],
+                      ),
+                    ),
+
+                    child: const Icon(
+                      Icons.smart_toy,
+                      color: Colors.white,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            const Text(
+              'Siri',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 21,
+              ),
+            ),
+          ],
         ),
+
         actions: [
+
           IconButton(
             tooltip: 'Connect',
-            onPressed: _connected ? null : _connect,
+
+            onPressed:
+                _connected
+                    ? null
+                    : _connect,
+
             icon: Icon(
-              _connected ? Icons.cloud_done : Icons.cloud_off,
+              _connected
+                  ? Icons.cloud_done
+                  : Icons.cloud_off,
             ),
           ),
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              switch (value) {
-                case 'mic':
-                  await _requestMicrophone();
-                  break;
 
-                case 'phone':
-                  await _requestCallPermission();
-                  break;
+          IconButton(
+            tooltip: 'Microphone permission',
 
-                case 'sms':
-                  await _requestSmsPermission();
-                  break;
+            onPressed:
+                _requestMicrophone,
 
-                case 'overlay':
-                  await _openOverlaySettings();
-                  break;
-
-                case 'notifications':
-                  await _openNotificationSettings();
-                  break;
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'mic',
-                child: Text('Microphone Permission'),
-              ),
-              PopupMenuItem(
-                value: 'phone',
-                child: Text('Call Permission'),
-              ),
-              PopupMenuItem(
-                value: 'sms',
-                child: Text('SMS Permission'),
-              ),
-              PopupMenuItem(
-                value: 'overlay',
-                child: Text('Overlay Settings'),
-              ),
-              PopupMenuItem(
-                value: 'notifications',
-                child: Text('Notification Access'),
-              ),
-            ],
+            icon: const Icon(
+              Icons.mic_none,
+            ),
           ),
         ],
       ),
+
+
       body: Column(
         children: [
+
           _buildStatus(),
 
           Expanded(
+
             child: _messages.isEmpty
-                ? _buildEmptyState()
+                ? _buildWelcome()
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length,
-                    itemBuilder: (_, index) {
+
+                    controller:
+                        _scrollController,
+
+                    padding:
+                        const EdgeInsets.all(16),
+
+                    itemCount:
+                        _messages.length,
+
+                    itemBuilder:
+                        (_, index) {
+
                       return _buildMessage(
                         _messages[index],
                       );
@@ -320,23 +535,37 @@ class _AssistantHomeState extends State<AssistantHome> {
                   ),
           ),
 
+
           if (_thinking)
             const Padding(
-              padding: EdgeInsets.all(8),
+              padding:
+                  EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 8,
+              ),
+
               child: Row(
                 children: [
+
                   SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(
+
+                    child:
+                        CircularProgressIndicator(
                       strokeWidth: 2,
                     ),
                   ),
+
                   SizedBox(width: 10),
-                  Text('Gemini is thinking...'),
+
+                  Text(
+                    'Siri is thinking...',
+                  ),
                 ],
               ),
             ),
+
 
           _buildInput(),
         ],
@@ -344,69 +573,190 @@ class _AssistantHomeState extends State<AssistantHome> {
     );
   }
 
+
+  // ==========================================================
+  // STATUS
+  // ==========================================================
+
   Widget _buildStatus() {
+
     return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(
+
+      margin:
+          const EdgeInsets.fromLTRB(
+        12,
+        12,
+        12,
+        4,
+      ),
+
+      padding:
+          const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 12,
       ),
+
       decoration: BoxDecoration(
+
         color: _connected
-            ? Colors.green.withOpacity(.12)
-            : Colors.red.withOpacity(.12),
-        borderRadius: BorderRadius.circular(18),
+            ? Colors.green
+                .withOpacity(.12)
+            : Colors.red
+                .withOpacity(.12),
+
+        borderRadius:
+            BorderRadius.circular(18),
       ),
+
       child: Row(
         children: [
+
           Container(
             width: 10,
             height: 10,
-            decoration: BoxDecoration(
+
+            decoration:
+                BoxDecoration(
               shape: BoxShape.circle,
-              color: _connected ? Colors.green : Colors.red,
+
+              color: _connected
+                  ? Colors.green
+                  : Colors.red,
             ),
           ),
+
           const SizedBox(width: 10),
+
           Text(_status),
+
           const Spacer(),
+
           if (_listening)
-            const Text(
-              'LISTENING',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
+            const Row(
+              children: [
+
+                Icon(
+                  Icons.mic,
+                  size: 16,
+                ),
+
+                SizedBox(width: 5),
+
+                Text(
+                  'LISTENING',
+                  style: TextStyle(
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+
+  // ==========================================================
+  // WELCOME
+  // ==========================================================
+
+  Widget _buildWelcome() {
+
     return Center(
+
       child: Padding(
-        padding: const EdgeInsets.all(30),
+        padding:
+            const EdgeInsets.all(30),
+
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+
+          mainAxisAlignment:
+              MainAxisAlignment.center,
+
           children: [
-            Icon(
-              Icons.graphic_eq,
-              size: 90,
-              color: Colors.deepPurple.shade300,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Voice AI Assistant',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+
+            Container(
+
+              width: 120,
+              height: 120,
+
+              decoration:
+                  const BoxDecoration(
+                shape: BoxShape.circle,
+
+                gradient:
+                    LinearGradient(
+                  colors: [
+                    Colors.deepPurple,
+                    Colors.purpleAccent,
+                  ],
+                ),
+              ),
+
+              padding:
+                  const EdgeInsets.all(4),
+
+              child: ClipOval(
+
+                child: Image.network(
+                  siriPhotoUrl,
+
+                  fit: BoxFit.cover,
+
+                  errorBuilder:
+                      (_, __, ___) {
+
+                    return const Icon(
+                      Icons.smart_toy,
+                      size: 70,
+                      color: Colors.white,
+                    );
+                  },
+                ),
               ),
             ),
-            const SizedBox(height: 10),
+
+            const SizedBox(height: 24),
+
             const Text(
-              'Talk to Gemini using voice or text.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white60),
+              'Hello, I am Siri',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            const Text(
+              'Talk to me using your microphone '
+              'or type a message below.',
+              textAlign:
+                  TextAlign.center,
+
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: 16,
+                height: 1.5,
+              ),
+            ),
+
+            const SizedBox(height: 25),
+
+            FilledButton.icon(
+
+              onPressed:
+                  _toggleMicrophone,
+
+              icon: const Icon(
+                Icons.mic,
+              ),
+
+              label: const Text(
+                'Talk to Siri',
+              ),
             ),
           ],
         ),
@@ -414,24 +764,54 @@ class _AssistantHomeState extends State<AssistantHome> {
     );
   }
 
-  Widget _buildMessage(ChatMessage message) {
-    final isUser = message.role == MessageRole.user;
+
+  // ==========================================================
+  // CHAT MESSAGE
+  // ==========================================================
+
+  Widget _buildMessage(
+      ChatMessage message) {
+
+    final isUser =
+        message.role ==
+            MessageRole.user;
 
     return Align(
-      alignment:
-          isUser ? Alignment.centerRight : Alignment.centerLeft,
+
+      alignment: isUser
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
+
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 330),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
+
+        constraints:
+            const BoxConstraints(
+          maxWidth: 340,
+        ),
+
+        margin:
+            const EdgeInsets.only(
+          bottom: 12,
+        ),
+
+        padding:
+            const EdgeInsets.all(15),
+
+        decoration:
+            BoxDecoration(
+
           color: isUser
               ? Colors.deepPurple
-              : Colors.white.withOpacity(.08),
-          borderRadius: BorderRadius.circular(18),
+              : Colors.white
+                  .withOpacity(.08),
+
+          borderRadius:
+              BorderRadius.circular(18),
         ),
+
         child: Text(
           message.text,
+
           style: const TextStyle(
             fontSize: 16,
             height: 1.4,
@@ -441,42 +821,102 @@ class _AssistantHomeState extends State<AssistantHome> {
     );
   }
 
+
+  // ==========================================================
+  // INPUT
+  // ==========================================================
+
   Widget _buildInput() {
+
     return SafeArea(
+
       child: Padding(
-        padding: const EdgeInsets.all(12),
+
+        padding:
+            const EdgeInsets.all(12),
+
         child: Row(
           children: [
+
             Expanded(
+
               child: TextField(
-                controller: _textController,
-                onSubmitted: (_) => _sendText(),
-                decoration: InputDecoration(
-                  hintText: 'Ask anything...',
+
+                controller:
+                    _controller,
+
+                textInputAction:
+                    TextInputAction.send,
+
+                onSubmitted:
+                    (_) => _sendText(),
+
+                decoration:
+                    InputDecoration(
+
+                  hintText:
+                      'Ask Siri anything...',
+
                   filled: true,
-                  fillColor: Colors.white.withOpacity(.08),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
-                    borderSide: BorderSide.none,
+
+                  fillColor:
+                      Colors.white
+                          .withOpacity(.08),
+
+                  border:
+                      OutlineInputBorder(
+
+                    borderRadius:
+                        BorderRadius.circular(
+                      28,
+                    ),
+
+                    borderSide:
+                        BorderSide.none,
+                  ),
+
+                  contentPadding:
+                      const EdgeInsets
+                          .symmetric(
+                    horizontal: 18,
+                    vertical: 14,
                   ),
                 ),
               ),
             ),
+
             const SizedBox(width: 8),
+
             FloatingActionButton(
               heroTag: 'send',
+
               mini: true,
-              onPressed: _sendText,
-              child: const Icon(Icons.send),
+
+              onPressed:
+                  _sendText,
+
+              child:
+                  const Icon(Icons.send),
             ),
+
             const SizedBox(width: 8),
+
             FloatingActionButton(
-              heroTag: 'voice',
+
+              heroTag: 'microphone',
+
               backgroundColor:
-                  _listening ? Colors.red : Colors.deepPurple,
-              onPressed: _toggleListening,
+                  _listening
+                      ? Colors.red
+                      : Colors.deepPurple,
+
+              onPressed:
+                  _toggleMicrophone,
+
               child: Icon(
-                _listening ? Icons.stop : Icons.mic,
+                _listening
+                    ? Icons.stop
+                    : Icons.mic,
               ),
             ),
           ],
@@ -486,13 +926,21 @@ class _AssistantHomeState extends State<AssistantHome> {
   }
 }
 
+
+// ============================================================
+// CHAT MESSAGE
+// ============================================================
+
 enum MessageRole {
   user,
   assistant,
 }
 
+
 class ChatMessage {
+
   final MessageRole role;
+
   final String text;
 
   ChatMessage({
@@ -501,8 +949,15 @@ class ChatMessage {
   });
 }
 
+
+// ============================================================
+// GEMINI LIVE SERVICE
+// ============================================================
+
 class GeminiLiveService {
+
   final String apiKey;
+
   final String model;
 
   GeminiLiveService({
@@ -510,226 +965,83 @@ class GeminiLiveService {
     required this.model,
   });
 
-  WebSocketChannel? _channel;
-  StreamSubscription? _socketSubscription;
 
-  Function(String text)? onText;
-  Function(String status)? onStatus;
-  Function()? onConnected;
-  Function()? onDisconnected;
-  Function(String error)? onError;
+  WebSocketChannel? _channel;
+
+  StreamSubscription?
+      _socketSubscription;
+
+  AudioRecorder? _recorder;
+
+  StreamSubscription<Uint8List>?
+      _microphoneSubscription;
+
 
   bool _connected = false;
 
+  bool _microphoneRunning = false;
+
+
+  Function(String text)? onText;
+
+  Function(String status)? onStatus;
+
+  Function()? onConnected;
+
+  Function()? onDisconnected;
+
+  Function(String error)? onError;
+
+
+  // ==========================================================
+  // CONNECT
+  // ==========================================================
+
   Future<void> connect() async {
+
     if (_connected) return;
 
+
+    if (apiKey.isEmpty) {
+
+      onError?.call(
+        'GEMINI_API_KEY is missing.',
+      );
+
+      return;
+    }
+
+
     try {
-      onStatus?.call('Connecting...');
+
+      onStatus?.call(
+        'Connecting to Gemini...',
+      );
+
 
       final uri = Uri.parse(
+
         'wss://generativelanguage.googleapis.com/ws/'
         'google.ai.generativelanguage.v1beta.'
         'GenerativeService.BidiGenerateContent'
         '?key=${Uri.encodeQueryComponent(apiKey)}',
       );
 
-      _channel = IOWebSocketChannel.connect(uri);
+
+      _channel =
+          IOWebSocketChannel.connect(uri);
+
 
       await _channel!.ready;
 
+
       _connected = true;
+
 
       onConnected?.call();
 
+
       _sendSetup();
 
-      _socketSubscription = _channel!.stream.listen(
-        _handleMessage,
-        onError: (error) {
-          onError?.call('WebSocket error: $error');
-        },
-        onDone: () {
-          _connected = false;
-          onDisconnected?.call();
-        },
-      );
-    } catch (e) {
-      _connected = false;
-      onError?.call('Connection failed: $e');
-    }
-  }
 
-  void _sendSetup() {
-    final setup = {
-      'setup': {
-        'model': 'models/$model',
-        'responseModalities': ['TEXT'],
-        'systemInstruction': {
-          'parts': [
-            {
-              'text':
-                  '''
-You are a helpful voice-first AI assistant.
-
-Rules:
-- Answer naturally and concisely.
-- Understand Hindi, English and Hinglish.
-- If the user asks for an action involving phone permissions,
-  explain that Android permission is required.
-- Never claim that you performed a phone action unless the
-  application actually executed it.
-'''
-            }
-          ],
-        },
-      }
-    };
-
-    _sendJson(setup);
-  }
-
-  Future<void> sendText(String text) async {
-    if (!_connected) {
-      await connect();
-    }
-
-    final message = {
-      'clientContent': {
-        'turns': [
-          {
-            'role': 'user',
-            'parts': [
-              {
-                'text': text,
-              }
-            ]
-          }
-        ],
-        'turnComplete': true,
-      }
-    };
-
-    _sendJson(message);
-  }
-
-  void _sendJson(Map<String, dynamic> message) {
-    if (!_connected || _channel == null) return;
-
-    _channel!.sink.add(
-      jsonEncode(message),
-    );
-  }
-
-  void _handleMessage(dynamic event) {
-    try {
-      final data = jsonDecode(event.toString());
-
-      final serverContent = data['serverContent'];
-
-      if (serverContent == null) return;
-
-      final modelTurn = serverContent['modelTurn'];
-
-      if (modelTurn == null) return;
-
-      final parts = modelTurn['parts'];
-
-      if (parts == null) return;
-
-      for (final part in parts) {
-        final text = part['text'];
-
-        if (text is String && text.isNotEmpty) {
-          onText?.call(text);
-        }
-
-        final inlineData = part['inlineData'];
-
-        if (inlineData != null) {
-          final mimeType =
-              inlineData['mimeType']?.toString() ?? '';
-
-          final base64Audio =
-              inlineData['data']?.toString() ?? '';
-
-          if (base64Audio.isNotEmpty) {
-            _handleAudio(
-              mimeType,
-              base64Audio,
-            );
-          }
-        }
-      }
-    } catch (e) {
-      onError?.call('Invalid Gemini response: $e');
-    }
-  }
-
-  void _handleAudio(
-    String mimeType,
-    String base64Audio,
-  ) {
-    // Gemini Live audio is returned as raw PCM.
-    //
-    // Production implementation:
-    // 1. Decode Base64.
-    // 2. Convert PCM16/24kHz to an audio stream.
-    // 3. Feed it to an Android AudioTrack/Flutter audio player.
-    //
-    // This method is intentionally separated so that the audio
-    // output implementation can be replaced independently.
-  }
-
-  Future<void> startMicrophone() async {
-    /*
-      Production microphone pipeline:
-
-      Microphone
-          ↓
-      PCM 16-bit / 16kHz
-          ↓
-      Base64
-          ↓
-      realtimeInput.audio
-          ↓
-      Gemini Live API
-
-      Example message:
-
-      {
-        "realtimeInput": {
-          "audio": {
-            "data": "...base64...",
-            "mimeType": "audio/pcm;rate=16000"
-          }
-        }
-      }
-
-      Use the `record` package to capture PCM frames and send
-      each frame through `_sendJson()`.
-    */
-
-    onStatus?.call('Microphone ready');
-  }
-
-  Future<void> stopMicrophone() async {
-    onStatus?.call('Microphone stopped');
-  }
-
-  Future<void> disconnect() async {
-    _connected = false;
-
-    await _socketSubscription?.cancel();
-    await _channel?.sink.close();
-
-    _socketSubscription = null;
-    _channel = null;
-
-    onDisconnected?.call();
-  }
-
-  void dispose() {
-    disconnect();
-  }
-}
+      _socketS
