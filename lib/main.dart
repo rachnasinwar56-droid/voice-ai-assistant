@@ -1041,7 +1041,4 @@ class GeminiLiveService {
       onConnected?.call();
 
 
-      _sendSetup();
-
-
-      _socketS
+      _socket
