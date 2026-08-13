@@ -47,12 +47,11 @@ jobs:
           flutter create --platforms=android --project-name=voice_ai_assistant .
 
       # ----------------------------------------
-      # FIX MIN SDK & COMPILE SDK FOR PLUGINS (speech_to_text fix)
+      # FIX MIN SDK & COMPILE SDK FOR PLUGINS
       # ----------------------------------------
       - name: Configure Android SDKs and Fix Plugins
         shell: bash
         run: |
-          # Set minSdk 24 and compileSdk 34 in app/build.gradle
           if [ -f "android/app/build.gradle.kts" ]; then
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle.kts
@@ -67,20 +66,8 @@ jobs:
             sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
           fi
 
-          # Force compileSdkVersion 34 for all plugin subprojects
           if [ -f "android/build.gradle" ]; then
-            cat << 'EOF' >> android/build.gradle
-
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                compileSdkVersion 34
-            }
-        }
-    }
-}
-EOF
+            echo 'subprojects { afterEvaluate { project -> if (project.hasProperty("android")) { project.android { compileSdkVersion 34 } } } }' >> android/build.gradle
           fi
 
       # ----------------------------------------
