@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -26,52 +24,45 @@ jobs:
       - name: Flutter Version
         run: flutter --version
 
-      # 3. Generate Android files
       - name: Generate Android Project
         run: flutter create --platforms=android .
 
-      # 4. Fix minSdk for flutter_tts
-      - name: Fix Android minSdk
+      - name: Fix Kotlin Version
         shell: bash
         run: |
-          echo "===== Fixing minSdk to 24 ====="
-
-          if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
-            sed -i 's/minSdk = [0-9][0-9]*/minSdk = 24/g' android/app/build.gradle.kts
-
-          elif [ -f "android/app/build.gradle" ]; then
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
-            sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 24/g' android/app/build.gradle
+          if [ -f "android/settings.gradle.kts" ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false/' android/settings.gradle.kts
           fi
 
-          echo "===== Current minSdk ====="
-          grep -R "minSdk" android/app/build.gradle* || true
+          if [ -f "android/settings.gradle" ]; then
+            sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*' apply false/id 'org.jetbrains.kotlin.android' version '2.2.20' apply false/" android/settings.gradle
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*" apply false/id "org.jetbrains.kotlin.android" version "2.2.20" apply false/' android/settings.gradle
+          fi
 
-      # 5. Get Flutter packages
+      - name: Fix minSdk
+        shell: bash
+        run: |
+          if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
+            sed -i 's/minSdk = [0-9]*/minSdk = 24/g' android/app/build.gradle.kts
+          fi
+
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+            sed -i 's/minSdkVersion [0-9]*/minSdkVersion 24/g' android/app/build.gradle
+          fi
+
       - name: Get Packages
         run: flutter pub get
 
-      # 6. Remove default Flutter test
-      # This fixes:
-      # The name 'MyApp' isn't a class
-      - name: Remove Default Flutter Test
-        run: |
-          rm -rf test
-          echo "Default test folder removed."
-
-      # 7. Analyze
-      # Warnings/info will NOT stop the build
       - name: Analyze
-        run: flutter analyze --no-fatal-infos
+        run: flutter analyze lib
 
-      # 8. Build APK
       - name: Build APK
         run: |
           flutter build apk --release \
             --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
-      # 9. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
