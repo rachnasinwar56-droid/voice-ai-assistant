@@ -14,18 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ----------------------------------------
-      # JAVA 17
-      # ----------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      # ----------------------------------------
-      # FLUTTER 3.27.0
-      # ----------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -33,79 +27,35 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Show versions
-        run: |
-          java -version
-          flutter --version
-          dart --version
-
-      # ----------------------------------------
-      # CREATE ANDROID PROJECT
-      # ----------------------------------------
       - name: Generate Android Project
+        run: flutter create --platforms=android --project-name=voice_ai_assistant .
+
+      - name: Flutter Clean & Pub Get
         run: |
-          flutter create --platforms=android --project-name=voice_ai_assistant .
+          flutter clean
+          flutter pub get
 
-      # ----------------------------------------
-      # FLUTTER PACKAGES
-      # ----------------------------------------
-      - name: Flutter Clean
-        run: flutter clean
-
-      - name: Get Packages
-        run: flutter pub get
-
-      # ----------------------------------------
-      # INJECT KOTLIN & SDK FIXES (SAFE GRADLE CONFIG)
-      # ----------------------------------------
-      - name: Fix Android & Plugin Compatibility
-        shell: bash
+      - name: Manual Gradle Fixes (Safe Mode)
         run: |
-          # 1. Update minSdk and compileSdk in app build.gradle
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
-            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
-            sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
-            sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
-          fi
+          # 1. App Level Fix (minSdk 24, compileSdk 34)
+          sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+          sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
+          sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
+          sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
 
-          # 2. Append Kotlin JVM Target 17 & compileSdk 34 fixes safely to root build.gradle
-          cat << 'EOF' >> android/build.gradle
+          # 2. Plugin Level Fix (Kotlin 17 & compileSdk 34) - Manual Line by Line
+          echo 'subprojects {' >> android/build.gradle
+          echo '    tasks.matching { it.class.name.contains("KotlinCompile") }.configureEach {' >> android/build.gradle
+          echo '        kotlinOptions { jvmTarget = "17" }' >> android/build.gradle
+          echo '    }' >> android/build.gradle
+          echo '    plugins.withId("com.android.library") { android { compileSdkVersion 34 } }' >> android/build.gradle
+          echo '}' >> android/build.gradle
 
-subprojects {
-    tasks.matching { it.class.name.contains("KotlinCompile") }.configureEach {
-        kotlinOptions {
-            jvmTarget = "17"
-        }
-    }
-    plugins.withId("com.android.library") {
-        android {
-            compileSdkVersion 34
-        }
-    }
-}
-EOF
-
-      # ----------------------------------------
-      # ANALYZE
-      # ----------------------------------------
-      - name: Analyze
-        run: flutter analyze
-        continue-on-error: true
-
-      # ----------------------------------------
-      # BUILD APK
-      # ----------------------------------------
       - name: Build Release APK
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          flutter build apk --release \
-            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+        run: flutter build apk --release --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
 
-      # ----------------------------------------
-      # UPLOAD APK
-      # ----------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
