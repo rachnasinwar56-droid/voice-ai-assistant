@@ -67,7 +67,7 @@ jobs:
           fi
 
           if [ -f "android/build.gradle" ]; then
-            echo 'subprojects { afterEvaluate { project -> if (project.hasProperty("android")) { project.android { compileSdkVersion 34 } } } }' >> android/build.gradle
+            echo 'subprojects { plugins.withId("com.android.library") { android { compileSdkVersion 34 } } plugins.withId("com.android.application") { android { compileSdkVersion 34 } } }' >> android/build.gradle
           fi
 
       # ----------------------------------------
