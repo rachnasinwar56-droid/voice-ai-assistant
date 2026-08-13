@@ -11,15 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------------------------------
-      # 1. Checkout
-      # -------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # -------------------------------------------------
-      # 2. Flutter
-      # -------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -30,80 +24,101 @@ jobs:
       - name: Flutter Version
         run: flutter --version
 
-      # -------------------------------------------------
-      # 3. Generate Android project only if missing
-      # -------------------------------------------------
-      - name: Prepare Android Project
-        shell: bash
-        run: |
-          if [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
-            flutter create --platforms=android .
-          fi
+      - name: Generate Android Project
+        run: flutter create --platforms=android .
 
-      # -------------------------------------------------
-      # 4. Remove Flutter default test
-      # -------------------------------------------------
-      - name: Remove Default Flutter Tests
+      - name: Fix Android minSdk
         shell: bash
         run: |
-          rm -rf test
-          echo "Default test folder removed."
+          echo "===== Fixing minSdk ====="
 
-      # -------------------------------------------------
-      # 5. Set Android minSdk
-      # -------------------------------------------------
-      - name: Set minSdk
-        shell: bash
-        run: |
           if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
+            echo "Using build.gradle.kts"
+
+            sed -i \
+              's/minSdk = flutter.minSdkVersion/minSdk = 24/g' \
+              android/app/build.gradle.kts
+
+            sed -i \
+              's/minSdk = [0-9][0-9]*/minSdk = 24/g' \
+              android/app/build.gradle.kts
+
           elif [ -f "android/app/build.gradle" ]; then
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
+            echo "Using build.gradle"
+
+            sed -i \
+              's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' \
+              android/app/build.gradle
+
+            sed -i \
+              's/minSdkVersion [0-9][0-9]*/minSdkVersion 24/g' \
+              android/app/build.gradle
           fi
 
-      # -------------------------------------------------
-      # 6. Upgrade Kotlin version
-      # -------------------------------------------------
-      - name: Configure Kotlin
+          echo "===== Checking minSdk ====="
+          grep -R "minSdk" android/app/build.gradle* || true
+
+      - name: Fix Kotlin Version
         shell: bash
         run: |
+          echo "===== Fixing Kotlin ====="
+
           if [ -f "android/settings.gradle" ]; then
-            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[^"]+/\12.2.20/' android/settings.gradle
+            sed -i \
+              's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "1.9.10"/g' \
+              android/settings.gradle
           fi
 
           if [ -f "android/settings.gradle.kts" ]; then
-            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[^"]+/\12.2.20/' android/settings.gradle.kts
+            sed -i \
+              's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "1.9.10"/g' \
+              android/settings.gradle.kts
           fi
 
-          echo "Kotlin configuration:"
-          grep -n "kotlin" android/settings.gradle 2>/dev/null || true
-          grep -n "kotlin" android/settings.gradle.kts 2>/dev/null || true
+          if [ -f "android/build.gradle" ]; then
+            sed -i \
+              "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '1.9.10'/g" \
+              android/build.gradle
+          fi
 
-      # -------------------------------------------------
-      # 7. Get packages
-      # -------------------------------------------------
-      - name: Flutter Pub Get
+          echo "===== Kotlin configuration ====="
+          grep -R "kotlin" android/settings.gradle* android/build.gradle 2>/dev/null || true
+
+      - name: Add TTS queries
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          text = p.read_text()
+
+          if "<queries>" not in text:
+              text = text.replace(
+                  "<application",
+                  """<queries>
+              <intent>
+                  <action android:name="android.intent.action.TTS_SERVICE" />
+              </intent>
+          </queries>
+
+          <application"""
+              )
+
+          p.write_text(text)
+          PY
+
+      - name: Get Packages
         run: flutter pub get
 
-      # -------------------------------------------------
-      # 8. Analyze
-      # -------------------------------------------------
-      - name: Flutter Analyze
+      - name: Analyze
         run: flutter analyze --no-fatal-infos
 
-      # -------------------------------------------------
-      # 9. Build Release APK
-      # -------------------------------------------------
       - name: Build APK
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           flutter build apk --release \
-            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+            --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
-      # -------------------------------------------------
-      # 10. Upload APK
-      # -------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
