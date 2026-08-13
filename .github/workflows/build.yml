@@ -43,12 +43,15 @@ jobs:
           sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
           sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
 
-          # 2. Plugin Level Fix (Kotlin 17 & compileSdk 34) - Manual Line by Line
+          # 2. Plugin Level Fix (Kotlin 17, Java 17 & compileSdk 34) - Manual Line by Line
           echo 'subprojects {' >> android/build.gradle
-          echo '    tasks.matching { it.class.name.contains("KotlinCompile") }.configureEach {' >> android/build.gradle
-          echo '        kotlinOptions { jvmTarget = "17" }' >> android/build.gradle
+          echo '    tasks.matching { it.class.name.contains("KotlinCompile") }.configureEach { kotlinOptions { jvmTarget = "17" } }' >> android/build.gradle
+          echo '    plugins.withId("com.android.library") {' >> android/build.gradle
+          echo '        android {' >> android/build.gradle
+          echo '            compileSdkVersion 34' >> android/build.gradle
+          echo '            compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' >> android/build.gradle
+          echo '        }' >> android/build.gradle
           echo '    }' >> android/build.gradle
-          echo '    plugins.withId("com.android.library") { android { compileSdkVersion 34 } }' >> android/build.gradle
           echo '}' >> android/build.gradle
 
       - name: Build Release APK
