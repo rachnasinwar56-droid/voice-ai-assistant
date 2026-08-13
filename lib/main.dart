@@ -87,9 +87,7 @@ class _SiriHomeState extends State<SiriHome> {
   Future<void> _initializeSpeech() async {
     final permission = await Permission.microphone.request();
 
-    if (!permission.isGranted) {
-      return;
-    }
+    if (!permission.isGranted) return;
 
     try {
       final available = await _speech.initialize(
@@ -255,9 +253,7 @@ class _SiriHomeState extends State<SiriHome> {
   Future<void> _sendMessage([String? value]) async {
     final text = (value ?? _controller.text).trim();
 
-    if (text.isEmpty || _thinking) {
-      return;
-    }
+    if (text.isEmpty || _thinking) return;
 
     if (apiKey.isEmpty) {
       _show(
@@ -710,7 +706,7 @@ class _SiriHomeState extends State<SiriHome> {
 }
 
 // ============================================================
-// CHAT MESSAGE MODEL
+// MODELS & GEMINI SERVICE
 // ============================================================
 
 enum MessageRole {
@@ -728,13 +724,8 @@ class ChatMessage {
   });
 }
 
-// ============================================================
-// GEMINI SERVICE (FIXED & COMPLETE)
-// ============================================================
-
 class GeminiService {
   final String apiKey;
-  String? _workingModel;
 
   GeminiService({
     required this.apiKey,
@@ -745,61 +736,40 @@ class GeminiService {
       throw Exception('Gemini API key missing.');
     }
 
-    final candidateModels = <String>[];
-    if (_workingModel != null) {
-      candidateModels.add(_workingModel!);
-    }
+    // 🔥 अपडेटेड Gemini 3.5 Flash Lite मॉडल ID
+    const String model = 'gemini-3.5-flash-lite';
 
-    candidateModels.addAll([
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
-    ]);
+    final url = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+    );
 
-    String lastError = 'No response generated.';
-
-    for (final model in candidateModels) {
-      try {
-        final url = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
-        );
-
-        final response = await http.post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'system_instruction': {
-              'parts': [
-                {
-                  'text': '''
-You are Siri, a friendly personal AI voice assistant.
-Your name is Siri.
-
-Rules:
-- Understand Hindi, English and Hinglish.
-- Reply in the same language as the user.
-- Keep answers natural, helpful and concise.
-- Do not use unnecessary markdown.
-'''
-                }
-              ]
-            },
-            'contents': [
-              {
-                'parts': [
-                  {'text': prompt}
-                ]
-              }
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'contents': [
+          {
+            'parts': [
+              {'text': prompt}
             ]
-          }),
-        );
+          }
+        ]
+      }),
+    );
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final text = data['candidates']?[0]?['content']?['parts']?[0]?['text']
-              as String?;
-
-          if (text != null && text.isNotEmpty) {
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'] as String?;
+      if (text != null && text.isNotEmpty) {
+        return text;
+      }
+      throw Exception('Empty response from Gemini.');
+    } else {
+      final errorData = jsonDecode(response.body);
+      final msg = errorData['error']?['message'] ?? 'API Error: ${response.statusCode}';
+      throw Exception(msg);
+    }
+  }
+}
