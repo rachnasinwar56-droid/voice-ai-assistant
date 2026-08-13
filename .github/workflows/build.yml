@@ -40,11 +40,11 @@ jobs:
           dart --version
 
       # ----------------------------------------
-      # CREATE ANDROID PROJECT
+      # CREATE ANDROID PROJECT (WITH VALID NAME)
       # ----------------------------------------
       - name: Generate Android Project
         run: |
-          flutter create --platforms=android .
+          flutter create --platforms=android --project-name=voice_ai_assistant .
 
       # ----------------------------------------
       # FORCE MIN SDK 24
