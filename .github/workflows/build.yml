@@ -30,20 +30,17 @@ jobs:
       - name: Generate Android Project
         run: flutter create --platforms=android --project-name=voice_ai_assistant .
 
+      # यहाँ हमने settings.gradle में Kotlin वर्ज़न 1.9.24 को सीधे सही तरीके से इंसर्ट कर दिया है
+      - name: Fix Kotlin Version in settings.gradle
+        run: |
+          if [ -f "android/settings.gradle" ]; then
+            sed -i 's/id "org.jetbrains.kotlin.android" version ".*" apply false/id "org.jetbrains.kotlin.android" version "1.9.24" apply false/g' android/settings.gradle
+          fi
+
       - name: Flutter Clean & Pub Get
         run: |
           flutter clean
           flutter pub get
-
-      # यह नया स्टेप Kotlin Gradle Plugin को नए वर्ज़न 1.9.24 पर अपडेट कर देगा
-      - name: Upgrade Kotlin Gradle Plugin
-        run: |
-          if [ -f "android/settings.gradle" ]; then
-            sed -i -E 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.24"/g' android/settings.gradle
-          fi
-          if [ -f "android/build.gradle" ]; then
-            sed -i -E "s/ext.kotlin_version = '.*'/ext.kotlin_version = '1.9.24'/g" android/build.gradle
-          fi
 
       - name: App Level Build.gradle Fix
         run: |
@@ -61,7 +58,7 @@ jobs:
             find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i "s/jvmTarget = '1.8'/jvmTarget = '17'/g" {} +
             find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i "s/jvmTarget = '11'/jvmTarget = '17'/g" {} +
             find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' {} +
-            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/jvmTarget = "11"/jvmTarget = "17"/g' {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/jvmTarget = "11"/jvmTarget = "17'/g' {} +
           fi
 
       - name: Master Override - Root Gradle Config
