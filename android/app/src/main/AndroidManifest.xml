@@ -13,8 +13,6 @@
 
     <!-- SMS -->
     <uses-permission android:name="android.permission.SEND_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
     <!-- Overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -22,7 +20,7 @@
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- TTS -->
+    <!-- Text To Speech -->
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
@@ -30,10 +28,10 @@
     </queries>
 
     <application
-        android:label="Siri"
         android:name="${applicationName}"
+        android:label="Siri"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
