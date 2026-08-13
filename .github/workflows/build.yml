@@ -30,10 +30,12 @@ jobs:
       - name: Generate Android Project
         run: flutter create --platforms=android --project-name=voice_ai_assistant .
 
-      - name: Fix Kotlin Version in settings.gradle
+      # यह स्टेप सीधे settings.gradle में Kotlin वर्ज़न 1.9.24 सेट कर देगा
+      - name: Force Kotlin Version to 1.9.24
         run: |
-          if [ -f "android/settings.gradle" ]; then
-            sed -i 's/id "org.jetbrains.kotlin.android" version ".*" apply false/id "org.jetbrains.kotlin.android" version "1.9.24" apply false/g' android/settings.gradle
+          SETTINGS_FILE="android/settings.gradle"
+          if [ -f "$SETTINGS_FILE" ]; then
+            sed -i 's/version "[0-9.]*"/version "1.9.24"/g' "$SETTINGS_FILE"
           fi
 
       - name: Flutter Clean & Pub Get
