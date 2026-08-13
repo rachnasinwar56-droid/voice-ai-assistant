@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
@@ -10,10 +12,6 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SiriApp());
 }
-
-// ============================================================
-// APP
-// ============================================================
 
 class SiriApp extends StatelessWidget {
   const SiriApp({super.key});
@@ -36,10 +34,6 @@ class SiriApp extends StatelessWidget {
     );
   }
 }
-
-// ============================================================
-// HOME
-// ============================================================
 
 class SiriHome extends StatefulWidget {
   const SiriHome({super.key});
@@ -87,13 +81,13 @@ class _SiriHomeState extends State<SiriHome> {
   // ============================================================
 
   Future<void> _initializeSpeech() async {
+    final permission = await Permission.microphone.request();
+
+    if (!permission.isGranted) {
+      return;
+    }
+
     try {
-      final permission = await Permission.microphone.request();
-
-      if (!permission.isGranted) {
-        return;
-      }
-
       final available = await _speech.initialize(
         onStatus: (status) {
           if (!mounted) return;
@@ -128,7 +122,7 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   // ============================================================
-  // TTS
+  // TEXT TO SPEECH
   // ============================================================
 
   Future<void> _initializeTts() async {
@@ -137,7 +131,9 @@ class _SiriHomeState extends State<SiriHome> {
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
 
-      await _tts.awaitSpeakCompletion(true);
+      if (Platform.isAndroid) {
+        await _tts.awaitSpeakCompletion(true);
+      }
     } catch (_) {}
   }
 
@@ -153,11 +149,7 @@ class _SiriHomeState extends State<SiriHome> {
 
       try {
         await _tts.setLanguage('hi-IN');
-      } catch (_) {
-        try {
-          await _tts.setLanguage('en-IN');
-        } catch (_) {}
-      }
+      } catch (_) {}
 
       await _tts.speak(text);
 
@@ -182,31 +174,31 @@ class _SiriHomeState extends State<SiriHome> {
   Future<void> _startListening() async {
     if (_thinking) return;
 
+    final permission = await Permission.microphone.request();
+
+    if (!permission.isGranted) {
+      _show('Microphone permission required.');
+      return;
+    }
+
+    if (!_speechAvailable) {
+      await _initializeSpeech();
+    }
+
+    if (!_speechAvailable) {
+      _show('Speech recognition is not available on this device.');
+      return;
+    }
+
+    await _tts.stop();
+
+    if (mounted) {
+      setState(() {
+        _listening = true;
+      });
+    }
+
     try {
-      final permission = await Permission.microphone.request();
-
-      if (!permission.isGranted) {
-        _show('Microphone permission required.');
-        return;
-      }
-
-      if (!_speechAvailable) {
-        await _initializeSpeech();
-      }
-
-      if (!_speechAvailable) {
-        _show('Speech recognition is not available.');
-        return;
-      }
-
-      await _tts.stop();
-
-      if (mounted) {
-        setState(() {
-          _listening = true;
-        });
-      }
-
       await _speech.listen(
         localeId: 'hi_IN',
         listenMode: stt.ListenMode.dictation,
@@ -214,11 +206,8 @@ class _SiriHomeState extends State<SiriHome> {
         onResult: (result) {
           if (!mounted) return;
 
-          final recognized = result.recognizedWords.trim();
-
           setState(() {
-            _controller.text = recognized;
-
+            _controller.text = result.recognizedWords;
             _controller.selection = TextSelection.fromPosition(
               TextPosition(
                 offset: _controller.text.length,
@@ -226,29 +215,25 @@ class _SiriHomeState extends State<SiriHome> {
             );
           });
 
-          // ======================================================
-          // IMPORTANT:
-          // Voice result automatically goes to _sendMessage().
-          // User does NOT need to press Send.
-          // ======================================================
+          if (result.finalResult) {
+            final text = result.recognizedWords.trim();
 
-          if (result.finalResult && recognized.isNotEmpty) {
             setState(() {
               _listening = false;
             });
 
-            _sendMessage(recognized);
+            if (text.isNotEmpty) {
+              _sendMessage(text);
+            }
           }
         },
       );
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
 
       setState(() {
         _listening = false;
       });
-
-      _show('Microphone error.');
     }
   }
 
@@ -273,20 +258,18 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   // ============================================================
-  // SEND TO GEMINI
+  // SEND MESSAGE
   // ============================================================
 
   Future<void> _sendMessage([String? value]) async {
     final text = (value ?? _controller.text).trim();
 
-    if (text.isEmpty || _thinking) {
-      return;
-    }
+    if (text.isEmpty || _thinking) return;
 
     if (apiKey.isEmpty) {
       _show(
         'GEMINI_API_KEY missing.\n'
-        'GitHub → Settings → Secrets → Actions में key add करें.',
+        'GitHub → Settings → Secrets and variables → Actions me key add karein.',
       );
       return;
     }
@@ -299,8 +282,6 @@ class _SiriHomeState extends State<SiriHome> {
 
     setState(() {
       _listening = false;
-      _thinking = true;
-      _controller.clear();
 
       _messages.add(
         ChatMessage(
@@ -308,6 +289,9 @@ class _SiriHomeState extends State<SiriHome> {
           text: text,
         ),
       );
+
+      _thinking = true;
+      _controller.clear();
     });
 
     _scrollBottom();
@@ -343,7 +327,7 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   // ============================================================
-  // SCROLL
+  // HELPERS
   // ============================================================
 
   void _scrollBottom() {
@@ -357,10 +341,6 @@ class _SiriHomeState extends State<SiriHome> {
       );
     });
   }
-
-  // ============================================================
-  // MESSAGE
-  // ============================================================
 
   void _show(String text) {
     if (!mounted) return;
@@ -395,6 +375,34 @@ class _SiriHomeState extends State<SiriHome> {
           ? 'SMS permission granted.'
           : 'SMS permission denied.',
     );
+  }
+
+  Future<void> _openOverlay() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      const intent = AndroidIntent(
+        action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
+      );
+
+      await intent.launch();
+    } catch (_) {
+      _show('Unable to open Overlay Settings.');
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      const intent = AndroidIntent(
+        action: 'android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
+      );
+
+      await intent.launch();
+    } catch (_) {
+      _show('Unable to open Notification Settings.');
+    }
   }
 
   // ============================================================
@@ -479,8 +487,17 @@ class _SiriHomeState extends State<SiriHome> {
                 case 'sms':
                   await _requestSms();
                   break;
+
+                case 'overlay':
+                  await _openOverlay();
+                  break;
+
+                case 'notification':
+                  await _openNotificationSettings();
+                  break;
               }
             },
+
             itemBuilder: (_) => const [
               PopupMenuItem(
                 value: 'mic',
@@ -493,6 +510,14 @@ class _SiriHomeState extends State<SiriHome> {
               PopupMenuItem(
                 value: 'sms',
                 child: Text('SMS Permission'),
+              ),
+              PopupMenuItem(
+                value: 'overlay',
+                child: Text('Overlay Settings'),
+              ),
+              PopupMenuItem(
+                value: 'notification',
+                child: Text('Notification Access'),
               ),
             ],
           ),
@@ -511,9 +536,7 @@ class _SiriHomeState extends State<SiriHome> {
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
                     itemBuilder: (_, index) {
-                      return _bubble(
-                        _messages[index],
-                      );
+                      return _bubble(_messages[index]);
                     },
                   ),
           ),
@@ -672,11 +695,10 @@ class _SiriHomeState extends State<SiriHome> {
   // ============================================================
 
   Widget _bubble(ChatMessage message) {
-    final isUser =
-        message.role == MessageRole.user;
+    final user = message.role == MessageRole.user;
 
     return Align(
-      alignment: isUser
+      alignment: user
           ? Alignment.centerRight
           : Alignment.centerLeft,
       child: Container(
@@ -688,7 +710,7 @@ class _SiriHomeState extends State<SiriHome> {
         ),
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          color: isUser
+          color: user
               ? Colors.deepPurple
               : Colors.white.withOpacity(.08),
           borderRadius: BorderRadius.circular(18),
@@ -722,18 +744,22 @@ class _SiriHomeState extends State<SiriHome> {
             Expanded(
               child: TextField(
                 controller: _controller,
-                textInputAction:
-                    TextInputAction.send,
+                textInputAction: TextInputAction.send,
+
                 onSubmitted: (_) {
                   _sendMessage();
                 },
+
                 decoration: InputDecoration(
                   hintText: _listening
                       ? 'Siri सुन रही है...'
                       : 'Siri से पूछें...',
+
                   filled: true,
+
                   fillColor:
                       Colors.white.withOpacity(.08),
+
                   border: OutlineInputBorder(
                     borderRadius:
                         BorderRadius.circular(28),
@@ -743,29 +769,22 @@ class _SiriHomeState extends State<SiriHome> {
               ),
             ),
 
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
 
-            // Manual send button.
-            // Voice input does NOT need this.
-            FloatingActionButton(
-              heroTag: 'send',
-              mini: true,
-              onPressed: _thinking
-                  ? null
-                  : () {
-                      _sendMessage();
-                    },
-              child: const Icon(Icons.send),
-            ),
-
-            const SizedBox(width: 8),
+            // SEND BUTTON REMOVED.
+            // Voice automatically sends after speech recognition.
 
             FloatingActionButton(
               heroTag: 'mic',
+              mini: true,
               backgroundColor: _listening
                   ? Colors.red
                   : Colors.deepPurple,
-              onPressed: _toggleMic,
+
+              onPressed: _thinking
+                  ? null
+                  : _toggleMic,
+
               child: Icon(
                 _listening
                     ? Icons.stop
@@ -799,7 +818,7 @@ class ChatMessage {
 }
 
 // ============================================================
-// GEMINI
+// GEMINI SERVICE
 // ============================================================
 
 class GeminiService {
@@ -816,8 +835,8 @@ class GeminiService {
       );
     }
 
-    // Use a currently supported Flash model.
-    const String model = 'gemini-2.5-flash';
+    // Stable Gemini model.
+    const String model = 'gemini-2.0-flash';
 
     final url = Uri.parse(
       'https://generativelanguage.googleapis.com/v1beta/models/'
@@ -829,10 +848,4 @@ class GeminiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({
-        'contents': [
-          {
-            'parts': [
-              {
-                'text': prompt,
-     
+      body: jsonEnc
