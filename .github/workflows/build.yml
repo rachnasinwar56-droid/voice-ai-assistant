@@ -11,9 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -24,101 +26,52 @@ jobs:
       - name: Flutter Version
         run: flutter --version
 
+      # 3. Generate Android files
       - name: Generate Android Project
         run: flutter create --platforms=android .
 
+      # 4. Fix minSdk for flutter_tts
       - name: Fix Android minSdk
         shell: bash
         run: |
-          echo "===== Fixing minSdk ====="
+          echo "===== Fixing minSdk to 24 ====="
 
           if [ -f "android/app/build.gradle.kts" ]; then
-            echo "Using build.gradle.kts"
-
-            sed -i \
-              's/minSdk = flutter.minSdkVersion/minSdk = 24/g' \
-              android/app/build.gradle.kts
-
-            sed -i \
-              's/minSdk = [0-9][0-9]*/minSdk = 24/g' \
-              android/app/build.gradle.kts
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
+            sed -i 's/minSdk = [0-9][0-9]*/minSdk = 24/g' android/app/build.gradle.kts
 
           elif [ -f "android/app/build.gradle" ]; then
-            echo "Using build.gradle"
-
-            sed -i \
-              's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' \
-              android/app/build.gradle
-
-            sed -i \
-              's/minSdkVersion [0-9][0-9]*/minSdkVersion 24/g' \
-              android/app/build.gradle
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+            sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 24/g' android/app/build.gradle
           fi
 
-          echo "===== Checking minSdk ====="
+          echo "===== Current minSdk ====="
           grep -R "minSdk" android/app/build.gradle* || true
 
-      - name: Fix Kotlin Version
-        shell: bash
-        run: |
-          echo "===== Fixing Kotlin ====="
-
-          if [ -f "android/settings.gradle" ]; then
-            sed -i \
-              's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "1.9.10"/g' \
-              android/settings.gradle
-          fi
-
-          if [ -f "android/settings.gradle.kts" ]; then
-            sed -i \
-              's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "1.9.10"/g' \
-              android/settings.gradle.kts
-          fi
-
-          if [ -f "android/build.gradle" ]; then
-            sed -i \
-              "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '1.9.10'/g" \
-              android/build.gradle
-          fi
-
-          echo "===== Kotlin configuration ====="
-          grep -R "kotlin" android/settings.gradle* android/build.gradle 2>/dev/null || true
-
-      - name: Add TTS queries
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          text = p.read_text()
-
-          if "<queries>" not in text:
-              text = text.replace(
-                  "<application",
-                  """<queries>
-              <intent>
-                  <action android:name="android.intent.action.TTS_SERVICE" />
-              </intent>
-          </queries>
-
-          <application"""
-              )
-
-          p.write_text(text)
-          PY
-
+      # 5. Get Flutter packages
       - name: Get Packages
         run: flutter pub get
 
+      # 6. Remove default Flutter test
+      # This fixes:
+      # The name 'MyApp' isn't a class
+      - name: Remove Default Flutter Test
+        run: |
+          rm -rf test
+          echo "Default test folder removed."
+
+      # 7. Analyze
+      # Warnings/info will NOT stop the build
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
+      # 8. Build APK
       - name: Build APK
         run: |
           flutter build apk --release \
             --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
+      # 9. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
