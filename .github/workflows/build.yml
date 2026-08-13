@@ -1,4 +1,4 @@
-          name: Build Siri APK
+name: Build Siri APK
 
 on:
   workflow_dispatch:
