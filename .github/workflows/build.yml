@@ -24,12 +24,12 @@ jobs:
           java-version: '17'
 
       # ----------------------------------------
-      # FLUTTER
+      # FLUTTER (Stable 3.24.5)
       # ----------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.0'
+          flutter-version: '3.24.5'
           channel: stable
           cache: true
 
@@ -68,34 +68,6 @@ jobs:
 
           echo "Android minSdk:"
           grep -R "minSdk" android/app || true
-
-      # ----------------------------------------
-      # CHECK FOR BROKEN JAVA VERSION
-      # ----------------------------------------
-      - name: Fix invalid JavaVersion values
-        shell: bash
-        run: |
-          find android -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -print0 | while IFS= read -r -d '' file
-          do
-            sed -i 's/VERSION_17_8/VERSION_17/g' "$file"
-            sed -i 's/JavaVersion.VERSION_17_8/JavaVersion.VERSION_17/g' "$file"
-          done
-
-      # ----------------------------------------
-      # FIX KOTLIN VERSION FOR FLUTTER_TTS
-      # ----------------------------------------
-      - name: Set Kotlin Version
-        shell: bash
-        run: |
-          if [ -f "android/build.gradle" ]; then
-            sed -i -E 's/ext\.kotlin_version[[:space:]]*=[[:space:]]*.*/ext.kotlin_version = "1.9.22"/g' android/build.gradle
-          fi
-          if [ -f "android/settings.gradle" ]; then
-            sed -i -E 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.22"/g' android/settings.gradle
-          fi
-          if [ -f "android/settings.gradle.kts" ]; then
-            sed -i -E 's/id\("org.jetbrains.kotlin.android"\) version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/g' android/settings.gradle.kts
-          fi
 
       # ----------------------------------------
       # FLUTTER PACKAGES
