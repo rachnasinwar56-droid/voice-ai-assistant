@@ -35,24 +35,40 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Manual Gradle Fixes (Safe Mode)
+      - name: App Level Build.gradle Fix
         run: |
-          # 1. App Level Fix (minSdk 24, compileSdk 34)
           sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
           sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
           sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
           sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
 
-          # 2. Plugin Level Fix (Kotlin 17, Java 17 & compileSdk 34) - Manual Line by Line
-          echo 'subprojects {' >> android/build.gradle
-          echo '    tasks.matching { it.class.name.contains("KotlinCompile") }.configureEach { kotlinOptions { jvmTarget = "17" } }' >> android/build.gradle
-          echo '    plugins.withId("com.android.library") {' >> android/build.gradle
-          echo '        android {' >> android/build.gradle
-          echo '            compileSdkVersion 34' >> android/build.gradle
-          echo '            compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' >> android/build.gradle
-          echo '        }' >> android/build.gradle
-          echo '    }' >> android/build.gradle
-          echo '}' >> android/build.gradle
+      # यह स्टेप सीधे Pub Cache में जाकर प्लगइन्स के अंदर मौजूद हार्डकोडेड Java 11/1.8 को 17 से रिप्लेस कर देगा
+      - name: Master Override - Patch Plugins in Pub Cache
+        run: |
+          PUB_CACHE="$HOME/.pub-cache"
+          if [ -d "$PUB_CACHE" ]; then
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/JavaVersion.VERSION_1_8/JavaVersion.VERSION_17/g' {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/JavaVersion.VERSION_11/JavaVersion.VERSION_17/g' {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i "s/jvmTarget = '1.8'/jvmTarget = '17'/g" {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i "s/jvmTarget = '11'/jvmTarget = '17'/g" {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' {} +
+            find "$PUB_CACHE" -type f -name "build.gradle" -exec sed -i 's/jvmTarget = "11"/jvmTarget = "17"/g' {} +
+          fi
+
+      # यह स्टेप रूट Gradle में JavaCompile और KotlinCompile को सख्ती से 17 पर लॉक कर देगा
+      - name: Master Override - Root Gradle Config
+        run: |
+          echo "allprojects {" >> android/build.gradle
+          echo "    tasks.withType(JavaCompile).configureEach {" >> android/build.gradle
+          echo "        sourceCompatibility = \"17\"" >> android/build.gradle
+          echo "        targetCompatibility = \"17\"" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "    tasks.matching { it.class.name.contains(\"KotlinCompile\") }.configureEach {" >> android/build.gradle
+          echo "        kotlinOptions {" >> android/build.gradle
+          echo "            jvmTarget = \"17\"" >> android/build.gradle
+          echo "        }" >> android/build.gradle
+          echo "    }" >> android/build.gradle
+          echo "}" >> android/build.gradle
 
       - name: Build Release APK
         env:
