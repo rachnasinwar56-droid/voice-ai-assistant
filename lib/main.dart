@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
@@ -14,7 +15,7 @@ void main() {
 }
 
 // ============================================================
-// SIRI APP ENTRY POINT
+// SIRI APP
 // ============================================================
 
 class SiriApp extends StatelessWidget {
@@ -40,7 +41,7 @@ class SiriApp extends StatelessWidget {
 }
 
 // ============================================================
-// SIRI HOME SCREEN
+// SIRI HOME
 // ============================================================
 
 class SiriHome extends StatefulWidget {
@@ -59,6 +60,9 @@ class _SiriHomeState extends State<SiriHome> {
   static const String siriPhotoUrl =
       'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Siri_logo.svg/512px-Siri_logo.svg.png';
 
+  static const MethodChannel nativeChannel =
+      MethodChannel('siri_native');
+
   late final GeminiService _gemini;
 
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -73,26 +77,36 @@ class _SiriHomeState extends State<SiriHome> {
   bool _listening = false;
   bool _thinking = false;
   bool _speaking = false;
+  bool _sendingSms = false;
 
   @override
   void initState() {
     super.initState();
-    _gemini = GeminiService(apiKey: apiKey);
+
+    _gemini = GeminiService(
+      apiKey: apiKey,
+    );
+
     _initializeSpeech();
     _initializeTts();
   }
 
-  // ---------------- SPEECH ----------------
+  // ==========================================================
+  // SPEECH INITIALIZATION
+  // ==========================================================
 
   Future<void> _initializeSpeech() async {
     final permission = await Permission.microphone.request();
 
-    if (!permission.isGranted) return;
+    if (!permission.isGranted) {
+      return;
+    }
 
     try {
       final available = await _speech.initialize(
         onStatus: (status) {
           if (!mounted) return;
+
           if (status == 'notListening') {
             setState(() {
               _listening = false;
@@ -101,6 +115,7 @@ class _SiriHomeState extends State<SiriHome> {
         },
         onError: (_) {
           if (!mounted) return;
+
           setState(() {
             _listening = false;
           });
@@ -114,13 +129,16 @@ class _SiriHomeState extends State<SiriHome> {
       });
     } catch (_) {
       if (!mounted) return;
+
       setState(() {
         _speechAvailable = false;
       });
     }
   }
 
-  // ---------------- TTS ----------------
+  // ==========================================================
+  // TTS
+  // ==========================================================
 
   Future<void> _initializeTts() async {
     try {
@@ -148,6 +166,7 @@ class _SiriHomeState extends State<SiriHome> {
         await _tts.setLanguage('hi-IN');
       } catch (_) {}
 
+      await _tts.stop();
       await _tts.speak(text);
 
       if (!mounted) return;
@@ -164,10 +183,12 @@ class _SiriHomeState extends State<SiriHome> {
     }
   }
 
-  // ---------------- MICROPHONE ----------------
+  // ==========================================================
+  // MICROPHONE
+  // ==========================================================
 
   Future<void> _startListening() async {
-    if (_thinking) return;
+    if (_thinking || _sendingSms) return;
 
     final permission = await Permission.microphone.request();
 
@@ -181,7 +202,7 @@ class _SiriHomeState extends State<SiriHome> {
     }
 
     if (!_speechAvailable) {
-      _show('Speech recognition is not available on this device.');
+      _show('Speech recognition is not available.');
       return;
     }
 
@@ -201,10 +222,14 @@ class _SiriHomeState extends State<SiriHome> {
         onResult: (result) {
           if (!mounted) return;
 
+          final words = result.recognizedWords.trim();
+
           setState(() {
-            _controller.text = result.recognizedWords;
+            _controller.text = words;
             _controller.selection = TextSelection.fromPosition(
-              TextPosition(offset: _controller.text.length),
+              TextPosition(
+                offset: _controller.text.length,
+              ),
             );
           });
 
@@ -213,15 +238,15 @@ class _SiriHomeState extends State<SiriHome> {
               _listening = false;
             });
 
-            final text = result.recognizedWords.trim();
-            if (text.isNotEmpty) {
-              _sendMessage(text);
+            if (words.isNotEmpty) {
+              _sendMessage(words);
             }
           }
         },
       );
     } catch (_) {
       if (!mounted) return;
+
       setState(() {
         _listening = false;
       });
@@ -248,528 +273,201 @@ class _SiriHomeState extends State<SiriHome> {
     }
   }
 
-  // ---------------- SEND MESSAGE ----------------
+  // ==========================================================
+  // DIRECT SMS COMMAND
+  //
+  // Examples:
+  //
+  // Raj ko message karo main aa raha hu
+  // Raj को message करो मैं आ रहा हूँ
+  // Send SMS to Raj I am coming
+  // Raj ko sms bhejo main aa raha hu
+  // ==========================================================
 
-  Future<void> _sendMessage([String? value]) async {
-    final text = (value ?? _controller.text).trim();
+  Future<bool> _handleSmsCommand(String text) async {
+    final lower = text.toLowerCase().trim();
 
-    if (text.isEmpty || _thinking) return;
+    final smsWords = [
+      'message',
+      'msg',
+      'sms',
+      'मैसेज',
+      'मैसेज करो',
+      'एसएमएस',
+    ];
 
-    if (apiKey.isEmpty) {
-      _show(
-        'GEMINI_API_KEY missing.\n'
-        'GitHub → Settings → Secrets → Actions me key add karein.',
-      );
-      return;
+    final containsSmsWord = smsWords.any(
+      (word) => lower.contains(word.toLowerCase()),
+    );
+
+    if (!containsSmsWord) {
+      return false;
     }
 
-    try {
-      await _speech.stop();
-    } catch (_) {}
+    String? contactName;
+    String? message;
 
-    if (!mounted) return;
+    // ----------------------------------------------------------
+    // Hindi / Hinglish:
+    //
+    // Raj ko message karo main aa raha hu
+    // Raj को message करो मैं आ रहा हूँ
+    // Raj ko sms bhejo main aa raha hu
+    // ----------------------------------------------------------
+
+    final hindiRegex = RegExp(
+      r'^\s*(.+?)\s+(?:ko|को)\s+(?:message|msg|sms|मैसेज|एसएमएस)'
+      r'(?:\s+(?:karo|kar do|bhejo|भेजो|करो|कर दो))?\s*(.*)$',
+      caseSensitive: false,
+    );
+
+    final hindiMatch = hindiRegex.firstMatch(text);
+
+    if (hindiMatch != null) {
+      contactName = hindiMatch.group(1)?.trim();
+      message = hindiMatch.group(2)?.trim();
+    }
+
+    // ----------------------------------------------------------
+    // English:
+    //
+    // Send message to Raj I am coming
+    // Send SMS to Raj I am coming
+    // ----------------------------------------------------------
+
+    if (contactName == null) {
+      final englishRegex = RegExp(
+        r'^\s*(?:send\s+)?(?:message|msg|sms)\s+'
+        r'(?:to|for)\s+(.+?)\s+(.+)$',
+        caseSensitive: false,
+      );
+
+      final englishMatch = englishRegex.firstMatch(text);
+
+      if (englishMatch != null) {
+        contactName = englishMatch.group(1)?.trim();
+        message = englishMatch.group(2)?.trim();
+      }
+    }
+
+    if (contactName == null || contactName.isEmpty) {
+      return false;
+    }
+
+    // Remove accidental command words from contact name.
+    contactName = contactName
+        .replaceAll(
+          RegExp(
+            r'\s+(ko|को)\s*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+
+    if (message == null || message.trim().isEmpty) {
+      _show('Message kya bhejna hai?');
+
+      await _speak(
+        'Message kya bhejna hai?',
+      );
+
+      return true;
+    }
+
+    message = message.trim();
+
+    if (!mounted) return true;
 
     setState(() {
-      _listening = false;
-      _messages.add(
-        ChatMessage(
-          role: MessageRole.user,
-          text: text,
-        ),
-      );
-      _thinking = true;
-      _controller.clear();
+      _sendingSms = true;
     });
 
-    _scrollBottom();
-
     try {
-      final answer = await _gemini.ask(text);
+      // Ask Android native code to:
+      // 1. Find contact
+      // 2. Get phone number
+      // 3. Send SMS
+      final result = await nativeChannel.invokeMethod(
+        'sendSmsToContact',
+        {
+          'contactName': contactName,
+          'message': message,
+        },
+      );
 
-      if (!mounted) return;
+      final success = result is Map &&
+          result['success'] == true;
 
-      setState(() {
-        _thinking = false;
-        _messages.add(
-          ChatMessage(
-            role: MessageRole.assistant,
-            text: answer,
-          ),
+      if (success) {
+        final sentTo =
+            result['contactName']?.toString() ?? contactName;
+
+        _addAssistantMessage(
+          'SMS sent to $sentTo.',
         );
-      });
 
-      _scrollBottom();
-      await _speak(answer);
-    } catch (e) {
-      if (!mounted) return;
+        await _speak(
+          '$sentTo को message भेज दिया है।',
+        );
+      } else {
+        final error =
+            result is Map
+                ? result['error']?.toString()
+                : null;
 
-      setState(() {
-        _thinking = false;
-      });
+        final errorText =
+            error == null || error.isEmpty
+                ? 'Contact नहीं मिला या SMS नहीं भेजा जा सका।'
+                : error;
 
-      _show('Error: $e');
-    }
-  }
+        _show(errorText);
 
-  // ---------------- UI HELPERS ----------------
-
-  void _scrollBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
-    });
-  }
-
-  void _show(String text) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  // ---------------- PERMISSIONS ----------------
-
-  Future<void> _requestPhone() async {
-    final result = await Permission.phone.request();
-    _show(
-      result.isGranted
-          ? 'Phone permission granted.'
-          : 'Phone permission denied.',
-    );
-  }
-
-  Future<void> _requestSms() async {
-    final result = await Permission.sms.request();
-    _show(
-      result.isGranted
-          ? 'SMS permission granted.'
-          : 'SMS permission denied.',
-    );
-  }
-
-  Future<void> _openOverlay() async {
-    if (!Platform.isAndroid) return;
-    try {
-      const intent = AndroidIntent(
-        action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
-      );
-      await intent.launch();
-    } catch (_) {
-      _show('Unable to open Overlay Settings.');
-    }
-  }
-
-  Future<void> _openNotificationSettings() async {
-    if (!Platform.isAndroid) return;
-    try {
-      const intent = AndroidIntent(
-        action: 'android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
-      );
-      await intent.launch();
-    } catch (_) {
-      _show('Unable to open Notification Settings.');
-    }
-  }
-
-  // ---------------- DISPOSE ----------------
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scroll.dispose();
-    _speech.stop();
-    _tts.stop();
-    super.dispose();
-  }
-
-  // ---------------- BUILD ----------------
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        leading: Padding(
-          padding: const EdgeInsets.all(7),
-          child: ClipOval(
-            child: Image.network(
-              siriPhotoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) {
-                return const CircleAvatar(
-                  child: Icon(Icons.auto_awesome),
-                );
-              },
-            ),
-          ),
-        ),
-        title: const Text(
-          'Siri',
-          style: TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Stop Siri',
-            onPressed: () async {
-              await _tts.stop();
-              if (!mounted) return;
-              setState(() {
-                _speaking = false;
-              });
-            },
-            icon: Icon(
-              _speaking ? Icons.volume_up : Icons.volume_off,
-            ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              switch (value) {
-                case 'mic':
-                  await Permission.microphone.request();
-                  await _initializeSpeech();
-                  break;
-                case 'phone':
-                  await _requestPhone();
-                  break;
-                case 'sms':
-                  await _requestSms();
-                  break;
-                case 'overlay':
-                  await _openOverlay();
-                  break;
-                case 'notification':
-                  await _openNotificationSettings();
-                  break;
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'mic',
-                child: Text('Microphone Permission'),
-              ),
-              PopupMenuItem(
-                value: 'phone',
-                child: Text('Phone Permission'),
-              ),
-              PopupMenuItem(
-                value: 'sms',
-                child: Text('SMS Permission'),
-              ),
-              PopupMenuItem(
-                value: 'overlay',
-                child: Text('Overlay Settings'),
-              ),
-              PopupMenuItem(
-                value: 'notification',
-                child: Text('Notification Access'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _status(),
-          Expanded(
-            child: _messages.isEmpty
-                ? _empty()
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length,
-                    itemBuilder: (_, index) {
-                      return _bubble(_messages[index]);
-                    },
-                  ),
-          ),
-          if (_thinking)
-            const Padding(
-              padding: EdgeInsets.all(10),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 17,
-                    height: 17,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 10),
-                  Text('Siri सोच रही है...'),
-                ],
-              ),
-            ),
-          _input(),
-        ],
-      ),
-    );
-  }
-
-  // ---------------- STATUS ----------------
-
-  Widget _status() {
-    final ready = apiKey.isNotEmpty;
-
-    return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
-      decoration: BoxDecoration(
-        color: ready
-            ? Colors.green.withOpacity(.12)
-            : Colors.red.withOpacity(.12),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: ready ? Colors.green : Colors.red,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            ready
-                ? (_listening
-                    ? 'Listening...'
-                    : _speaking
-                        ? 'Siri बोल रही है...'
-                        : 'Siri Ready')
-                : 'Gemini API Key Missing',
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------- EMPTY SCREEN ----------------
-
-  Widget _empty() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 130,
-              height: 130,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.deepPurple.withOpacity(.35),
-                    blurRadius: 40,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              child: ClipOval(
-                child: Image.network(
-                  siriPhotoUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) {
-                    return Container(
-                      color: Colors.deepPurple,
-                      child: const Icon(
-                        Icons.auto_awesome,
-                        size: 65,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 25),
-            const Text(
-              'Siri',
-              style: TextStyle(
-                fontSize: 34,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Your AI Voice Assistant',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 15),
-            Text(
-              _speechAvailable
-                  ? '🎙️ Mic दबाकर बोलें'
-                  : 'Microphone तैयार किया जा रहा है...',
-              style: const TextStyle(
-                color: Colors.white54,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------- CHAT BUBBLE ----------------
-
-  Widget _bubble(ChatMessage message) {
-    final user = message.role == MessageRole.user;
-
-    return Align(
-      alignment: user ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 340),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: user ? Colors.deepPurple : Colors.white.withOpacity(.08),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Text(
-          message.text,
-          style: const TextStyle(
-            fontSize: 16,
-            height: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------- INPUT ----------------
-
-  Widget _input() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) {
-                  _sendMessage();
-                },
-                decoration: InputDecoration(
-                  hintText:
-                      _listening ? 'Siri सुन रही है...' : 'Siri से पूछें...',
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(.08),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            FloatingActionButton(
-              heroTag: 'send',
-              mini: true,
-              onPressed: _thinking
-                  ? null
-                  : () {
-                      _sendMessage();
-                    },
-              child: const Icon(Icons.send),
-            ),
-            const SizedBox(width: 8),
-            FloatingActionButton(
-              heroTag: 'mic',
-              backgroundColor: _listening ? Colors.red : Colors.deepPurple,
-              onPressed: _toggleMic,
-              child: Icon(
-                _listening ? Icons.stop : Icons.mic,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// MODELS & GEMINI SERVICE
-// ============================================================
-
-enum MessageRole {
-  user,
-  assistant,
-}
-
-class ChatMessage {
-  final MessageRole role;
-  final String text;
-
-  ChatMessage({
-    required this.role,
-    required this.text,
-  });
-}
-
-class GeminiService {
-  final String apiKey;
-
-  GeminiService({
-    required this.apiKey,
-  });
-
-  Future<String> ask(String prompt) async {
-    if (apiKey.isEmpty) {
-      throw Exception('Gemini API key missing.');
-    }
-
-    // 🔥 अपडेटेड Gemini 3.5 Flash Lite मॉडल ID
-    const String model = 'gemini-3.5-flash-lite';
-
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
-    );
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'contents': [
-          {
-            'parts': [
-              {'text': prompt}
-            ]
-          }
-        ]
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'] as String?;
-      if (text != null && text.isNotEmpty) {
-        return text;
+        await _speak(errorText);
       }
-      throw Exception('Empty response from Gemini.');
-    } else {
-      final errorData = jsonDecode(response.body);
-      final msg = errorData['error']?['message'] ?? 'API Error: ${response.statusCode}';
-      throw Exception(msg);
+    } on PlatformException catch (e) {
+      String messageText;
+
+      switch (e.code) {
+        case 'SMS_PERMISSION':
+          messageText =
+              'SMS permission की जरूरत है। कृपया Allow करें।';
+          break;
+
+        case 'CONTACT_PERMISSION':
+          messageText =
+              'Contacts permission की जरूरत है।';
+          break;
+
+        case 'CONTACT_NOT_FOUND':
+          messageText =
+              '$contactName नाम का contact नहीं मिला।';
+          break;
+
+        default:
+          messageText =
+              e.message ?? 'SMS भेजने में समस्या हुई।';
+      }
+
+      _show(messageText);
+      await _speak(messageText);
+    } catch (e) {
+      _show('SMS error: $e');
+      await _speak('SMS भेजने में समस्या हुई।');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingSms = false;
+        });
+      }
     }
+
+    return true;
   }
-}
+
+  // ==========================================================
+  // SEND / GEMINI
+  // ==========================================================
+
+  Future<void> _sendMessage([String? value]) async {
+    final text = (
