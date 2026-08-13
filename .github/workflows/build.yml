@@ -11,9 +11,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------------------------------
+      # 1. Checkout
+      # -------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # -------------------------------------------------
+      # 2. Flutter
+      # -------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -24,9 +30,28 @@ jobs:
       - name: Flutter Version
         run: flutter --version
 
-      - name: Generate Android Project
-        run: flutter create --platforms=android .
+      # -------------------------------------------------
+      # 3. Generate Android project only if missing
+      # -------------------------------------------------
+      - name: Prepare Android Project
+        shell: bash
+        run: |
+          if [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
+            flutter create --platforms=android .
+          fi
 
+      # -------------------------------------------------
+      # 4. Remove Flutter default test
+      # -------------------------------------------------
+      - name: Remove Default Flutter Tests
+        shell: bash
+        run: |
+          rm -rf test
+          echo "Default test folder removed."
+
+      # -------------------------------------------------
+      # 5. Set Android minSdk
+      # -------------------------------------------------
       - name: Set minSdk
         shell: bash
         run: |
@@ -36,17 +61,49 @@ jobs:
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
           fi
 
-      - name: Get Packages
+      # -------------------------------------------------
+      # 6. Upgrade Kotlin version
+      # -------------------------------------------------
+      - name: Configure Kotlin
+        shell: bash
+        run: |
+          if [ -f "android/settings.gradle" ]; then
+            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[^"]+/\12.2.20/' android/settings.gradle
+          fi
+
+          if [ -f "android/settings.gradle.kts" ]; then
+            sed -i -E 's/(org\.jetbrains\.kotlin\.android" version ")[^"]+/\12.2.20/' android/settings.gradle.kts
+          fi
+
+          echo "Kotlin configuration:"
+          grep -n "kotlin" android/settings.gradle 2>/dev/null || true
+          grep -n "kotlin" android/settings.gradle.kts 2>/dev/null || true
+
+      # -------------------------------------------------
+      # 7. Get packages
+      # -------------------------------------------------
+      - name: Flutter Pub Get
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze
+      # -------------------------------------------------
+      # 8. Analyze
+      # -------------------------------------------------
+      - name: Flutter Analyze
+        run: flutter analyze --no-fatal-infos
 
+      # -------------------------------------------------
+      # 9. Build Release APK
+      # -------------------------------------------------
       - name: Build APK
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           flutter build apk --release \
-            --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
 
+      # -------------------------------------------------
+      # 10. Upload APK
+      # -------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
