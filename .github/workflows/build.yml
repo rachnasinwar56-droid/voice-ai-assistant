@@ -1,4 +1,4 @@
-name: Build Siri APK
+          name: Build Siri APK
 
 on:
   workflow_dispatch:
@@ -6,36 +6,24 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
-
-      # ========================================================
+      # ==========================================
       # CHECKOUT
-      # ========================================================
-
+      # ==========================================
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ========================================================
-      # JAVA 17
-      # ========================================================
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-
-      # ========================================================
-      # FLUTTER
-      # ========================================================
-
+      # ==========================================
+      # SETUP FLUTTER
+      # ==========================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -43,136 +31,187 @@ jobs:
           channel: stable
           cache: true
 
-
-      # ========================================================
-      # SHOW VERSIONS
-      # ========================================================
-
-      - name: Show versions
+      - name: Show Flutter Version
         run: |
-          java -version
           flutter --version
           dart --version
 
-
-      # ========================================================
+      # ==========================================
       # GENERATE ANDROID PROJECT
-      # ========================================================
-
+      # ==========================================
       - name: Generate Android Project
         run: |
           flutter create --platforms=android .
 
+      # ==========================================
+      # SETUP JAVA 17
+      # ==========================================
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
 
-      # ========================================================
-      # FIX ANDROID BUILD FILE
-      # ========================================================
+      - name: Show Java Version
+        run: |
+          java -version
+          echo "JAVA_HOME=$JAVA_HOME"
 
-      - name: Configure Android Java 17 and minSdk 24
+      # ==========================================
+      # FIX ANDROID MANIFEST
+      # ==========================================
+      - name: Configure Android Permissions
         shell: bash
         run: |
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
 
-          path = Path("android/app/build.gradle")
+          p = Path("android/app/src/main/AndroidManifest.xml")
 
-          if path.exists():
-              text = path.read_text()
+          text = p.read_text()
 
-              text = text.replace(
-                  "JavaVersion.VERSION_17_8",
-                  "JavaVersion.VERSION_17"
-              )
+          permissions = [
+              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+              '<uses-permission android:name="android.permission.READ_PHONE_STATE" />',
+              '<uses-permission android:name="android.permission.CALL_PHONE" />',
+              '<uses-permission android:name="android.permission.READ_SMS" />',
+              '<uses-permission android:name="android.permission.SEND_SMS" />',
+              '<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />',
+              '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+          ]
 
-              text = text.replace(
-                  "JavaVersion.VERSION_17_8",
-                  "JavaVersion.VERSION_17"
-              )
+          for permission in permissions:
+              if permission not in text:
+                  text = text.replace(
+                      '<manifest ',
+                      '<manifest ',
+                      1
+                  )
+                  manifest_end = text.find('>')
+                  text = (
+                      text[:manifest_end + 1]
+                      + '\n    '
+                      + permission
+                      + text[manifest_end + 1:]
+                  )
 
-              text = text.replace(
-                  "minSdkVersion flutter.minSdkVersion",
-                  "minSdkVersion 24"
-              )
-
-              text = text.replace(
-                  "minSdk = flutter.minSdkVersion",
-                  "minSdk = 24"
-              )
-
-              path.write_text(text)
-
-          # Kotlin DSL, if Flutter generated it.
-          kts = Path("android/app/build.gradle.kts")
-
-          if kts.exists():
-              text = kts.read_text()
-
-              text = text.replace(
-                  "JavaVersion.VERSION_17_8",
-                  "JavaVersion.VERSION_17"
-              )
-
-              text = text.replace(
-                  "minSdk = flutter.minSdkVersion",
-                  "minSdk = 24"
-              )
-
-              kts.write_text(text)
-
-          print("Android configuration fixed.")
+          p.write_text(text)
           PY
 
+          echo "AndroidManifest:"
+          cat android/app/src/main/AndroidManifest.xml
 
-      # ========================================================
-      # VERIFY JAVA CONFIG
-      # ========================================================
-
-      - name: Verify Android configuration
+      # ==========================================
+      # FIX ANDROID SDK / JAVA
+      # ==========================================
+      - name: Configure Android Build
+        shell: bash
         run: |
-          echo "Checking JavaVersion..."
-          grep -R "VERSION_17" android || true
+          if [ -f "android/app/build.gradle" ]; then
+            python3 - <<'PY'
+          from pathlib import Path
 
-          echo "Checking minSdk..."
-          grep -R "minSdk" android/app || true
+          p = Path("android/app/build.gradle")
+          text = p.read_text()
 
-          echo "Checking invalid VERSION_17_8..."
-          if grep -R "VERSION_17_8" android; then
-            echo "ERROR: VERSION_17_8 still exists."
-            exit 1
+          text = text.replace(
+              "JavaVersion.VERSION_17_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          text = text.replace(
+              "JavaVersion.VERSION_17_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          if "compileOptions" in text:
+              pass
+          else:
+              marker = "android {"
+              if marker in text:
+                  block = '''android {
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+          '''
+                  text = text.replace(marker, block, 1)
+
+          text = text.replace(
+              "minSdkVersion flutter.minSdkVersion",
+              "minSdkVersion 24"
+          )
+
+          text = text.replace(
+              "minSdk = flutter.minSdkVersion",
+              "minSdk = 24"
+          )
+
+          p.write_text(text)
+          PY
           fi
 
+          if [ -f "android/app/build.gradle.kts" ]; then
+            python3 - <<'PY'
+          from pathlib import Path
 
-      # ========================================================
+          p = Path("android/app/build.gradle.kts")
+          text = p.read_text()
+
+          text = text.replace(
+              "JavaVersion.VERSION_17_8",
+              "JavaVersion.VERSION_17"
+          )
+
+          text = text.replace(
+              "minSdk = flutter.minSdkVersion",
+              "minSdk = 24"
+          )
+
+          text = text.replace(
+              "minSdk = flutter.minSdkVersion",
+              "minSdk = 24"
+          )
+
+          p.write_text(text)
+          PY
+          fi
+
+          echo "Android build configuration:"
+          if [ -f "android/app/build.gradle" ]; then
+            cat android/app/build.gradle
+          fi
+
+          if [ -f "android/app/build.gradle.kts" ]; then
+            cat android/app/build.gradle.kts
+          fi
+
+      # ==========================================
       # GET PACKAGES
-      # ========================================================
-
+      # ==========================================
       - name: Get Packages
         run: flutter pub get
 
-
-      # ========================================================
+      # ==========================================
       # ANALYZE
-      # ========================================================
-
+      # ==========================================
       - name: Analyze
         run: flutter analyze
         continue-on-error: true
 
-
-      # ========================================================
+      # ==========================================
       # BUILD APK
-      # ========================================================
-
+      # ==========================================
       - name: Build Release APK
         run: |
           flutter build apk --release \
             --dart-define=GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
 
-
-      # ========================================================
+      # ==========================================
       # UPLOAD APK
-      # ========================================================
-
+      # ==========================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
