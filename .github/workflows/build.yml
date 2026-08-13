@@ -27,16 +27,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android Project
-        run: flutter create --platforms=android --project-name=voice_ai_assistant .
-
-      # यह सिंगल-लाइन कमांड पाइथन के इंडेंटेशन एरर को कभी आने नहीं देगी
-      - name: Safe Patch Kotlin Version in settings.gradle
-        run: |
-          if [ -f "android/settings.gradle" ]; then
-            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/g' android/settings.gradle
-          fi
-
       - name: Flutter Clean & Pub Get
         run: |
           flutter clean
