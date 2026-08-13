@@ -79,9 +79,7 @@ class _SiriHomeState extends State<SiriHome> {
   Future<void> _initializeSpeech() async {
     final mic = await Permission.microphone.request();
 
-    if (!mic.isGranted) {
-      return;
-    }
+    if (!mic.isGranted) return;
 
     try {
       final available = await _speech.initialize(
@@ -118,15 +116,13 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   Future<void> _initializeTts() async {
-    try {
-      await _tts.setSpeechRate(0.48);
-      await _tts.setPitch(1.0);
-      await _tts.setVolume(1.0);
+    await _tts.setSpeechRate(0.48);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
 
-      if (Platform.isAndroid) {
-        await _tts.awaitSpeakCompletion(true);
-      }
-    } catch (_) {}
+    if (Platform.isAndroid) {
+      await _tts.awaitSpeakCompletion(true);
+    }
   }
 
   Future<void> _speak(String text) async {
@@ -137,10 +133,7 @@ class _SiriHomeState extends State<SiriHome> {
         _speaking = true;
       });
 
-      await _tts.stop();
-
       await _tts.setLanguage('hi-IN');
-
       await _tts.speak(text);
 
       if (mounted) {
@@ -160,8 +153,7 @@ class _SiriHomeState extends State<SiriHome> {
   Future<void> _startListening() async {
     if (_thinking) return;
 
-    final permission =
-        await Permission.microphone.request();
+    final permission = await Permission.microphone.request();
 
     if (!permission.isGranted) {
       _show('Microphone permission required.');
@@ -185,46 +177,37 @@ class _SiriHomeState extends State<SiriHome> {
       _listening = true;
     });
 
-    try {
-      await _speech.listen(
-        localeId: 'hi_IN',
-        listenMode: stt.ListenMode.dictation,
-        partialResults: true,
-        onResult: (result) {
-          if (!mounted) return;
+    await _speech.listen(
+      localeId: 'hi_IN',
+      listenMode: stt.ListenMode.dictation,
+      partialResults: true,
+      onResult: (result) {
+        if (!mounted) return;
 
+        setState(() {
+          _controller.text = result.recognizedWords;
+
+          _controller.selection =
+              TextSelection.fromPosition(
+            TextPosition(
+              offset: _controller.text.length,
+            ),
+          );
+        });
+
+        if (result.finalResult) {
           setState(() {
-            _controller.text = result.recognizedWords;
-
-            _controller.selection =
-                TextSelection.fromPosition(
-              TextPosition(
-                offset: _controller.text.length,
-              ),
-            );
+            _listening = false;
           });
 
-          if (result.finalResult) {
-            setState(() {
-              _listening = false;
-            });
+          final text = result.recognizedWords.trim();
 
-            final text =
-                result.recognizedWords.trim();
-
-            if (text.isNotEmpty) {
-              _sendMessage(text);
-            }
+          if (text.isNotEmpty) {
+            _sendMessage(text);
           }
-        },
-      );
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _listening = false;
-        });
-      }
-    }
+        }
+      },
+    );
   }
 
   Future<void> _stopListening() async {
@@ -246,12 +229,9 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   Future<void> _sendMessage([String? value]) async {
-    final text =
-        (value ?? _controller.text).trim();
+    final text = (value ?? _controller.text).trim();
 
-    if (text.isEmpty || _thinking) {
-      return;
-    }
+    if (text.isEmpty || _thinking) return;
 
     if (apiKey.isEmpty) {
       _show(
@@ -280,8 +260,7 @@ class _SiriHomeState extends State<SiriHome> {
     _scrollBottom();
 
     try {
-      final answer =
-          await _gemini.ask(text);
+      final answer = await _gemini.ask(text);
 
       if (!mounted) return;
 
@@ -306,21 +285,17 @@ class _SiriHomeState extends State<SiriHome> {
         _thinking = false;
       });
 
-      _show(
-        'Gemini error: $e',
-      );
+      _show('Gemini error: $e');
     }
   }
 
   void _scrollBottom() {
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
 
       _scroll.animateTo(
         _scroll.position.maxScrollExtent,
-        duration:
-            const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     });
@@ -332,15 +307,13 @@ class _SiriHomeState extends State<SiriHome> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(text),
-        behavior:
-            SnackBarBehavior.floating,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
   Future<void> _requestPhone() async {
-    final result =
-        await Permission.phone.request();
+    final result = await Permission.phone.request();
 
     _show(
       result.isGranted
@@ -350,8 +323,7 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   Future<void> _requestSms() async {
-    final result =
-        await Permission.sms.request();
+    final result = await Permission.sms.request();
 
     _show(
       result.isGranted
@@ -371,9 +343,7 @@ class _SiriHomeState extends State<SiriHome> {
 
       await intent.launch();
     } catch (_) {
-      _show(
-        'Unable to open Overlay Settings.',
-      );
+      _show('Unable to open Overlay Settings.');
     }
   }
 
@@ -388,9 +358,7 @@ class _SiriHomeState extends State<SiriHome> {
 
       await intent.launch();
     } catch (_) {
-      _show(
-        'Unable to open Notification Settings.',
-      );
+      _show('Unable to open Notification Settings.');
     }
   }
 
@@ -408,25 +376,20 @@ class _SiriHomeState extends State<SiriHome> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 8,
-
         leading: Padding(
           padding: const EdgeInsets.all(7),
           child: ClipOval(
             child: Image.network(
               siriPhotoUrl,
               fit: BoxFit.cover,
-              errorBuilder:
-                  (_, __, ___) {
+              errorBuilder: (_, __, ___) {
                 return const CircleAvatar(
-                  child: Icon(
-                    Icons.auto_awesome,
-                  ),
+                  child: Icon(Icons.auto_awesome),
                 );
               },
             ),
           ),
         ),
-
         title: const Text(
           'Siri',
           style: TextStyle(
@@ -434,7 +397,6 @@ class _SiriHomeState extends State<SiriHome> {
             fontWeight: FontWeight.bold,
           ),
         ),
-
         actions: [
           IconButton(
             tooltip: 'Stop Siri',
@@ -453,15 +415,11 @@ class _SiriHomeState extends State<SiriHome> {
                   : Icons.volume_off,
             ),
           ),
-
           PopupMenuButton<String>(
-            onSelected:
-                (value) async {
+            onSelected: (value) async {
               switch (value) {
                 case 'mic':
-                  await Permission
-                      .microphone
-                      .request();
+                  await Permission.microphone.request();
                   await _initializeSpeech();
                   break;
 
@@ -485,39 +443,28 @@ class _SiriHomeState extends State<SiriHome> {
             itemBuilder: (_) => const [
               PopupMenuItem(
                 value: 'mic',
-                child: Text(
-                  'Microphone Permission',
-                ),
+                child: Text('Microphone Permission'),
               ),
               PopupMenuItem(
                 value: 'phone',
-                child: Text(
-                  'Phone Permission',
-                ),
+                child: Text('Phone Permission'),
               ),
               PopupMenuItem(
                 value: 'sms',
-                child: Text(
-                  'SMS Permission',
-                ),
+                child: Text('SMS Permission'),
               ),
               PopupMenuItem(
                 value: 'overlay',
-                child: Text(
-                  'Overlay Settings',
-                ),
+                child: Text('Overlay Settings'),
               ),
               PopupMenuItem(
                 value: 'notification',
-                child: Text(
-                  'Notification Access',
-                ),
+                child: Text('Notification Access'),
               ),
             ],
           ),
         ],
       ),
-
       body: Column(
         children: [
           _status(),
@@ -527,15 +474,10 @@ class _SiriHomeState extends State<SiriHome> {
                 ? _empty()
                 : ListView.builder(
                     controller: _scroll,
-                    padding:
-                        const EdgeInsets.all(16),
-                    itemCount:
-                        _messages.length,
-                    itemBuilder:
-                        (_, index) {
-                      return _bubble(
-                        _messages[index],
-                      );
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length,
+                    itemBuilder: (_, index) {
+                      return _bubble(_messages[index]);
                     },
                   ),
           ),
@@ -548,15 +490,12 @@ class _SiriHomeState extends State<SiriHome> {
                   SizedBox(
                     width: 17,
                     height: 17,
-                    child:
-                        CircularProgressIndicator(
+                    child: CircularProgressIndicator(
                       strokeWidth: 2,
                     ),
                   ),
                   SizedBox(width: 10),
-                  Text(
-                    'Siri सोच रही है...',
-                  ),
+                  Text('Siri सोच रही है...'),
                 ],
               ),
             ),
@@ -568,42 +507,33 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   Widget _status() {
-    final ready =
-        apiKey.isNotEmpty;
+    final ready = apiKey.isNotEmpty;
 
     return Container(
-      margin:
-          const EdgeInsets.all(12),
-      padding:
-          const EdgeInsets.symmetric(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 12,
       ),
       decoration: BoxDecoration(
         color: ready
-            ? Colors.green
-                .withOpacity(.12)
-            : Colors.red
-                .withOpacity(.12),
-        borderRadius:
-            BorderRadius.circular(18),
+            ? Colors.green.withOpacity(.12)
+            : Colors.red.withOpacity(.12),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
           Container(
             width: 10,
             height: 10,
-            decoration:
-                BoxDecoration(
+            decoration: BoxDecoration(
               color: ready
                   ? Colors.green
                   : Colors.red,
               shape: BoxShape.circle,
             ),
           ),
-
           const SizedBox(width: 10),
-
           Text(
             ready
                 ? (_listening
@@ -621,8 +551,7 @@ class _SiriHomeState extends State<SiriHome> {
   Widget _empty() {
     return Center(
       child: SingleChildScrollView(
-        padding:
-            const EdgeInsets.all(30),
+        padding: const EdgeInsets.all(30),
         child: Column(
           mainAxisAlignment:
               MainAxisAlignment.center,
@@ -630,14 +559,11 @@ class _SiriHomeState extends State<SiriHome> {
             Container(
               width: 130,
               height: 130,
-              decoration:
-                  BoxDecoration(
-                shape:
-                    BoxShape.circle,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors
-                        .deepPurple
+                    color: Colors.deepPurple
                         .withOpacity(.35),
                     blurRadius: 40,
                     spreadRadius: 5,
@@ -648,14 +574,11 @@ class _SiriHomeState extends State<SiriHome> {
                 child: Image.network(
                   siriPhotoUrl,
                   fit: BoxFit.cover,
-                  errorBuilder:
-                      (_, __, ___) {
+                  errorBuilder: (_, __, ___) {
                     return Container(
-                      color:
-                          Colors.deepPurple,
+                      color: Colors.deepPurple,
                       child: const Icon(
-                        Icons
-                            .auto_awesome,
+                        Icons.auto_awesome,
                         size: 65,
                       ),
                     );
@@ -663,39 +586,29 @@ class _SiriHomeState extends State<SiriHome> {
                 ),
               ),
             ),
-
             const SizedBox(height: 25),
-
             const Text(
               'Siri',
               style: TextStyle(
                 fontSize: 34,
-                fontWeight:
-                    FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 8),
-
             const Text(
               'Your AI Voice Assistant',
               style: TextStyle(
                 fontSize: 18,
-                color:
-                    Colors.white70,
+                color: Colors.white70,
               ),
             ),
-
             const SizedBox(height: 15),
-
             Text(
               _speechAvailable
                   ? '🎙️ Mic दबाकर बोलें'
                   : 'Microphone तैयार किया जा रहा है...',
-              style:
-                  const TextStyle(
-                color:
-                    Colors.white54,
+              style: const TextStyle(
+                color: Colors.white54,
               ),
             ),
           ],
@@ -704,42 +617,32 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 
-  Widget _bubble(
-      ChatMessage message) {
+  Widget _bubble(ChatMessage message) {
     final user =
-        message.role ==
-            MessageRole.user;
+        message.role == MessageRole.user;
 
     return Align(
       alignment: user
           ? Alignment.centerRight
           : Alignment.centerLeft,
       child: Container(
-        constraints:
-            const BoxConstraints(
+        constraints: const BoxConstraints(
           maxWidth: 340,
         ),
-        margin:
-            const EdgeInsets.only(
+        margin: const EdgeInsets.only(
           bottom: 12,
         ),
-        padding:
-            const EdgeInsets.all(15),
-        decoration:
-            BoxDecoration(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
           color: user
               ? Colors.deepPurple
-              : Colors.white
-                  .withOpacity(.08),
+              : Colors.white.withOpacity(.08),
           borderRadius:
-              BorderRadius.circular(
-            18,
-          ),
+              BorderRadius.circular(18),
         ),
         child: Text(
           message.text,
-          style:
-              const TextStyle(
+          style: const TextStyle(
             fontSize: 16,
             height: 1.4,
           ),
@@ -751,8 +654,7 @@ class _SiriHomeState extends State<SiriHome> {
   Widget _input() {
     return SafeArea(
       child: Padding(
-        padding:
-            const EdgeInsets.fromLTRB(
+        padding: const EdgeInsets.fromLTRB(
           12,
           8,
           12,
@@ -762,31 +664,22 @@ class _SiriHomeState extends State<SiriHome> {
           children: [
             Expanded(
               child: TextField(
-                controller:
-                    _controller,
+                controller: _controller,
                 textInputAction:
                     TextInputAction.send,
                 onSubmitted: (_) =>
                     _sendMessage(),
-                decoration:
-                    InputDecoration(
+                decoration: InputDecoration(
                   hintText: _listening
                       ? 'Siri सुन रही है...'
                       : 'Siri से पूछें...',
                   filled: true,
                   fillColor:
-                      Colors.white
-                          .withOpacity(
-                    .08,
-                  ),
-                  border:
-                      OutlineInputBorder(
+                      Colors.white.withOpacity(.08),
+                  border: OutlineInputBorder(
                     borderRadius:
-                        BorderRadius.circular(
-                      28,
-                    ),
-                    borderSide:
-                        BorderSide.none,
+                        BorderRadius.circular(28),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
@@ -799,11 +692,8 @@ class _SiriHomeState extends State<SiriHome> {
               mini: true,
               onPressed: _thinking
                   ? null
-                  : () =>
-                      _sendMessage(),
-              child: const Icon(
-                Icons.send,
-              ),
+                  : () => _sendMessage(),
+              child: const Icon(Icons.send),
             ),
 
             const SizedBox(width: 8),
@@ -814,8 +704,7 @@ class _SiriHomeState extends State<SiriHome> {
                   _listening
                       ? Colors.red
                       : Colors.deepPurple,
-              onPressed:
-                  _toggleMic,
+              onPressed: _toggleMic,
               child: Icon(
                 _listening
                     ? Icons.stop
@@ -828,11 +717,6 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 }
-
-
-// ============================================================
-// MESSAGE MODEL
-// ============================================================
 
 enum MessageRole {
   user,
@@ -849,11 +733,6 @@ class ChatMessage {
   });
 }
 
-
-// ============================================================
-// GEMINI SERVICE
-// ============================================================
-
 class GeminiService {
   final String apiKey;
 
@@ -868,13 +747,9 @@ class GeminiService {
       );
     }
 
-    // Current supported Gemini models.
-    //
-    // Primary:
-    // gemini-3.6-flash
-    //
-    // Fallback:
-    // gemini-3.5-flash
+    // Current Gemini models.
+    // Primary model: Gemini 3.6 Flash
+    // Fallback model: Gemini 3.5 Flash
     const models = [
       'gemini-3.6-flash',
       'gemini-3.5-flash',
@@ -896,4 +771,76 @@ class GeminiService {
               url,
               headers: {
                 'Content-Type':
-   
+                    'application/json',
+              },
+              body: jsonEncode({
+                'system_instruction': {
+                  'parts': [
+                    {
+                      'text': '''
+You are Siri, a friendly personal AI voice assistant.
+
+Your name is Siri.
+
+Rules:
+- Understand Hindi, English and Hinglish.
+- Reply in the same language as the user.
+- If the user asks in Hindi, answer in Hindi.
+- If the user asks in Hinglish, answer in natural Hinglish.
+- If the user asks in English, answer in English.
+- Keep answers natural, helpful and concise.
+- Do not use unnecessary markdown.
+- Never claim that you performed a phone/device action unless
+  the app actually performed that action.
+- For normal questions, answer directly.
+'''
+                    }
+                  ],
+                },
+
+                'contents': [
+                  {
+                    'role': 'user',
+                    'parts': [
+                      {
+                        'text': prompt,
+                      }
+                    ],
+                  }
+                ],
+
+                'generationConfig': {
+                  'maxOutputTokens': 1024,
+                },
+              }),
+            )
+            .timeout(
+              const Duration(seconds: 30),
+            );
+
+        if (response.statusCode == 200) {
+          final data =
+              jsonDecode(response.body);
+
+          final candidates =
+              data['candidates'];
+
+          if (candidates is List &&
+              candidates.isNotEmpty) {
+            final content =
+                candidates[0]['content'];
+
+            final parts =
+                content?['parts'];
+
+            if (parts is List &&
+                parts.isNotEmpty) {
+              final text =
+                  parts[0]['text'];
+
+              if (text is String &&
+                  text.trim().isNotEmpty) {
+                return text.trim();
+              }
+            }
+       
