@@ -47,11 +47,21 @@ jobs:
           flutter create --platforms=android --project-name=voice_ai_assistant .
 
       # ----------------------------------------
-      # FIX MIN SDK & COMPILE SDK FOR PLUGINS
+      # FLUTTER PACKAGES
       # ----------------------------------------
-      - name: Configure Android SDKs and Fix Plugins
+      - name: Flutter Clean
+        run: flutter clean
+
+      - name: Get Packages
+        run: flutter pub get
+
+      # ----------------------------------------
+      # FIX SDK VERSIONS IN APP & PLUGINS
+      # ----------------------------------------
+      - name: Fix SDK Versions for App and Pub Cache Plugins
         shell: bash
         run: |
+          # Fix app build.gradle
           if [ -f "android/app/build.gradle.kts" ]; then
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle.kts
@@ -66,12 +76,16 @@ jobs:
             sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
           fi
 
-          if [ -f "android/build.gradle" ]; then
-            echo 'subprojects { p -> p.pluginManager.withPlugin("com.android.library") { p.android { compileSdkVersion 34 } } p.pluginManager.withPlugin("com.android.application") { p.android { compileSdkVersion 34 } } }' >> android/build.gradle
+          # Fix all plugins in pub cache directly
+          if [ -d "$HOME/.pub-cache" ]; then
+            find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' {} +
+            find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 34/g' {} +
+            find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' {} +
+            find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' {} +
           fi
 
       # ----------------------------------------
-      # CHECK FOR BROKEN JAVA VERSION
+      # FIX INVALID JAVA VERSION VALUES
       # ----------------------------------------
       - name: Fix invalid JavaVersion values
         shell: bash
@@ -81,15 +95,6 @@ jobs:
             sed -i 's/VERSION_17_8/VERSION_17/g' "$file"
             sed -i 's/JavaVersion.VERSION_17_8/JavaVersion.VERSION_17/g' "$file"
           done
-
-      # ----------------------------------------
-      # FLUTTER PACKAGES
-      # ----------------------------------------
-      - name: Flutter Clean
-        run: flutter clean
-
-      - name: Get Packages
-        run: flutter pub get
 
       # ----------------------------------------
       # ANALYZE
