@@ -76,10 +76,14 @@ class _SiriHomeState extends State<SiriHome> {
     _initializeTts();
   }
 
-  Future<void> _initializeSpeech() async {
-    final mic = await Permission.microphone.request();
+  // ---------------- SPEECH ----------------
 
-    if (!mic.isGranted) return;
+  Future<void> _initializeSpeech() async {
+    final permission = await Permission.microphone.request();
+
+    if (!permission.isGranted) {
+      return;
+    }
 
     try {
       final available = await _speech.initialize(
@@ -101,54 +105,65 @@ class _SiriHomeState extends State<SiriHome> {
         },
       );
 
-      if (mounted) {
-        setState(() {
-          _speechAvailable = available;
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        _speechAvailable = available;
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _speechAvailable = false;
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        _speechAvailable = false;
+      });
     }
   }
 
-  Future<void> _initializeTts() async {
-    await _tts.setSpeechRate(0.48);
-    await _tts.setPitch(1.0);
-    await _tts.setVolume(1.0);
+  // ---------------- TTS ----------------
 
-    if (Platform.isAndroid) {
-      await _tts.awaitSpeakCompletion(true);
-    }
+  Future<void> _initializeTts() async {
+    try {
+      await _tts.setSpeechRate(0.48);
+      await _tts.setPitch(1.0);
+      await _tts.setVolume(1.0);
+
+      if (Platform.isAndroid) {
+        await _tts.awaitSpeakCompletion(true);
+      }
+    } catch (_) {}
   }
 
   Future<void> _speak(String text) async {
     if (text.trim().isEmpty) return;
 
     try {
-      setState(() {
-        _speaking = true;
-      });
+      if (mounted) {
+        setState(() {
+          _speaking = true;
+        });
+      }
 
-      await _tts.setLanguage('hi-IN');
+      try {
+        await _tts.setLanguage('hi-IN');
+      } catch (_) {}
+
       await _tts.speak(text);
 
-      if (mounted) {
-        setState(() {
-          _speaking = false;
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        _speaking = false;
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _speaking = false;
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        _speaking = false;
+      });
     }
   }
+
+  // ---------------- MICROPHONE ----------------
 
   Future<void> _startListening() async {
     if (_thinking) return;
@@ -173,51 +188,63 @@ class _SiriHomeState extends State<SiriHome> {
 
     await _tts.stop();
 
-    setState(() {
-      _listening = true;
-    });
+    if (mounted) {
+      setState(() {
+        _listening = true;
+      });
+    }
 
-    await _speech.listen(
-      localeId: 'hi_IN',
-      listenMode: stt.ListenMode.dictation,
-      partialResults: true,
-      onResult: (result) {
-        if (!mounted) return;
+    try {
+      await _speech.listen(
+        localeId: 'hi_IN',
+        listenMode: stt.ListenMode.dictation,
+        partialResults: true,
+        onResult: (result) {
+          if (!mounted) return;
 
-        setState(() {
-          _controller.text = result.recognizedWords;
-
-          _controller.selection =
-              TextSelection.fromPosition(
-            TextPosition(
-              offset: _controller.text.length,
-            ),
-          );
-        });
-
-        if (result.finalResult) {
           setState(() {
-            _listening = false;
+            _controller.text = result.recognizedWords;
+
+            _controller.selection =
+                TextSelection.fromPosition(
+              TextPosition(
+                offset: _controller.text.length,
+              ),
+            );
           });
 
-          final text = result.recognizedWords.trim();
+          if (result.finalResult) {
+            setState(() {
+              _listening = false;
+            });
 
-          if (text.isNotEmpty) {
-            _sendMessage(text);
+            final text = result.recognizedWords.trim();
+
+            if (text.isNotEmpty) {
+              _sendMessage(text);
+            }
           }
-        }
-      },
-    );
-  }
+        },
+      );
+    } catch (_) {
+      if (!mounted) return;
 
-  Future<void> _stopListening() async {
-    await _speech.stop();
-
-    if (mounted) {
       setState(() {
         _listening = false;
       });
     }
+  }
+
+  Future<void> _stopListening() async {
+    try {
+      await _speech.stop();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    setState(() {
+      _listening = false;
+    });
   }
 
   Future<void> _toggleMic() async {
@@ -228,20 +255,28 @@ class _SiriHomeState extends State<SiriHome> {
     }
   }
 
+  // ---------------- SEND MESSAGE ----------------
+
   Future<void> _sendMessage([String? value]) async {
     final text = (value ?? _controller.text).trim();
 
-    if (text.isEmpty || _thinking) return;
+    if (text.isEmpty || _thinking) {
+      return;
+    }
 
     if (apiKey.isEmpty) {
       _show(
         'GEMINI_API_KEY missing.\n'
-        'GitHub → Settings → Secrets → Actions में key add करें.',
+        'GitHub → Settings → Secrets → Actions me key add karein.',
       );
       return;
     }
 
-    await _speech.stop();
+    try {
+      await _speech.stop();
+    } catch (_) {}
+
+    if (!mounted) return;
 
     setState(() {
       _listening = false;
@@ -289,6 +324,8 @@ class _SiriHomeState extends State<SiriHome> {
     }
   }
 
+  // ---------------- UI HELPERS ----------------
+
   void _scrollBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
@@ -311,6 +348,8 @@ class _SiriHomeState extends State<SiriHome> {
       ),
     );
   }
+
+  // ---------------- PERMISSIONS ----------------
 
   Future<void> _requestPhone() async {
     final result = await Permission.phone.request();
@@ -362,6 +401,8 @@ class _SiriHomeState extends State<SiriHome> {
     }
   }
 
+  // ---------------- DISPOSE ----------------
+
   @override
   void dispose() {
     _controller.dispose();
@@ -371,11 +412,14 @@ class _SiriHomeState extends State<SiriHome> {
     super.dispose();
   }
 
+  // ---------------- BUILD ----------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 8,
+
         leading: Padding(
           padding: const EdgeInsets.all(7),
           child: ClipOval(
@@ -390,6 +434,7 @@ class _SiriHomeState extends State<SiriHome> {
             ),
           ),
         ),
+
         title: const Text(
           'Siri',
           style: TextStyle(
@@ -397,17 +442,18 @@ class _SiriHomeState extends State<SiriHome> {
             fontWeight: FontWeight.bold,
           ),
         ),
+
         actions: [
           IconButton(
             tooltip: 'Stop Siri',
             onPressed: () async {
               await _tts.stop();
 
-              if (mounted) {
-                setState(() {
-                  _speaking = false;
-                });
-              }
+              if (!mounted) return;
+
+              setState(() {
+                _speaking = false;
+              });
             },
             icon: Icon(
               _speaking
@@ -415,6 +461,7 @@ class _SiriHomeState extends State<SiriHome> {
                   : Icons.volume_off,
             ),
           ),
+
           PopupMenuButton<String>(
             onSelected: (value) async {
               switch (value) {
@@ -440,6 +487,7 @@ class _SiriHomeState extends State<SiriHome> {
                   break;
               }
             },
+
             itemBuilder: (_) => const [
               PopupMenuItem(
                 value: 'mic',
@@ -465,6 +513,7 @@ class _SiriHomeState extends State<SiriHome> {
           ),
         ],
       ),
+
       body: Column(
         children: [
           _status(),
@@ -477,7 +526,9 @@ class _SiriHomeState extends State<SiriHome> {
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
                     itemBuilder: (_, index) {
-                      return _bubble(_messages[index]);
+                      return _bubble(
+                        _messages[index],
+                      );
                     },
                   ),
           ),
@@ -506,6 +557,8 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 
+  // ---------------- STATUS ----------------
+
   Widget _status() {
     final ready = apiKey.isNotEmpty;
 
@@ -521,6 +574,7 @@ class _SiriHomeState extends State<SiriHome> {
             : Colors.red.withOpacity(.12),
         borderRadius: BorderRadius.circular(18),
       ),
+
       child: Row(
         children: [
           Container(
@@ -533,7 +587,9 @@ class _SiriHomeState extends State<SiriHome> {
               shape: BoxShape.circle,
             ),
           ),
+
           const SizedBox(width: 10),
+
           Text(
             ready
                 ? (_listening
@@ -548,17 +604,22 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 
+  // ---------------- EMPTY SCREEN ----------------
+
   Widget _empty() {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(30),
+
         child: Column(
           mainAxisAlignment:
               MainAxisAlignment.center,
+
           children: [
             Container(
               width: 130,
               height: 130,
+
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 boxShadow: [
@@ -570,6 +631,7 @@ class _SiriHomeState extends State<SiriHome> {
                   ),
                 ],
               ),
+
               child: ClipOval(
                 child: Image.network(
                   siriPhotoUrl,
@@ -586,7 +648,9 @@ class _SiriHomeState extends State<SiriHome> {
                 ),
               ),
             ),
+
             const SizedBox(height: 25),
+
             const Text(
               'Siri',
               style: TextStyle(
@@ -594,7 +658,9 @@ class _SiriHomeState extends State<SiriHome> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 8),
+
             const Text(
               'Your AI Voice Assistant',
               style: TextStyle(
@@ -602,7 +668,9 @@ class _SiriHomeState extends State<SiriHome> {
                 color: Colors.white70,
               ),
             ),
+
             const SizedBox(height: 15),
+
             Text(
               _speechAvailable
                   ? '🎙️ Mic दबाकर बोलें'
@@ -617,6 +685,8 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 
+  // ---------------- CHAT BUBBLE ----------------
+
   Widget _bubble(ChatMessage message) {
     final user =
         message.role == MessageRole.user;
@@ -625,14 +695,18 @@ class _SiriHomeState extends State<SiriHome> {
       alignment: user
           ? Alignment.centerRight
           : Alignment.centerLeft,
+
       child: Container(
         constraints: const BoxConstraints(
           maxWidth: 340,
         ),
+
         margin: const EdgeInsets.only(
           bottom: 12,
         ),
+
         padding: const EdgeInsets.all(15),
+
         decoration: BoxDecoration(
           color: user
               ? Colors.deepPurple
@@ -640,6 +714,7 @@ class _SiriHomeState extends State<SiriHome> {
           borderRadius:
               BorderRadius.circular(18),
         ),
+
         child: Text(
           message.text,
           style: const TextStyle(
@@ -651,6 +726,8 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 
+  // ---------------- INPUT ----------------
+
   Widget _input() {
     return SafeArea(
       child: Padding(
@@ -660,6 +737,7 @@ class _SiriHomeState extends State<SiriHome> {
           12,
           12,
         ),
+
         child: Row(
           children: [
             Expanded(
@@ -667,15 +745,21 @@ class _SiriHomeState extends State<SiriHome> {
                 controller: _controller,
                 textInputAction:
                     TextInputAction.send,
-                onSubmitted: (_) =>
-                    _sendMessage(),
+
+                onSubmitted: (_) {
+                  _sendMessage();
+                },
+
                 decoration: InputDecoration(
                   hintText: _listening
                       ? 'Siri सुन रही है...'
                       : 'Siri से पूछें...',
+
                   filled: true,
+
                   fillColor:
                       Colors.white.withOpacity(.08),
+
                   border: OutlineInputBorder(
                     borderRadius:
                         BorderRadius.circular(28),
@@ -690,9 +774,13 @@ class _SiriHomeState extends State<SiriHome> {
             FloatingActionButton(
               heroTag: 'send',
               mini: true,
+
               onPressed: _thinking
                   ? null
-                  : () => _sendMessage(),
+                  : () {
+                      _sendMessage();
+                    },
+
               child: const Icon(Icons.send),
             ),
 
@@ -700,11 +788,14 @@ class _SiriHomeState extends State<SiriHome> {
 
             FloatingActionButton(
               heroTag: 'mic',
+
               backgroundColor:
                   _listening
                       ? Colors.red
                       : Colors.deepPurple,
+
               onPressed: _toggleMic,
+
               child: Icon(
                 _listening
                     ? Icons.stop
@@ -717,6 +808,10 @@ class _SiriHomeState extends State<SiriHome> {
     );
   }
 }
+
+// ============================================================
+// CHAT MESSAGE
+// ============================================================
 
 enum MessageRole {
   user,
@@ -733,6 +828,10 @@ class ChatMessage {
   });
 }
 
+// ============================================================
+// GEMINI SERVICE
+// ============================================================
+
 class GeminiService {
   final String apiKey;
 
@@ -747,37 +846,28 @@ class GeminiService {
       );
     }
 
-    // Current Gemini models.
-    // Primary model: Gemini 3.6 Flash
-    // Fallback model: Gemini 3.5 Flash
-    const models = [
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-    ];
+    // Use currently supported Gemini model.
+    const String model = 'gemini-2.5-flash';
 
-    String lastError =
-        'No response from Gemini.';
+    try {
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/'
+        'v1beta/models/$model:generateContent'
+        '?key=$apiKey',
+      );
 
-    for (final model in models) {
-      try {
-        final url = Uri.parse(
-          'https://generativelanguage.googleapis.com/'
-          'v1beta/models/$model:generateContent'
-          '?key=$apiKey',
-        );
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+            },
 
-        final response = await http
-            .post(
-              url,
-              headers: {
-                'Content-Type':
-                    'application/json',
-              },
-              body: jsonEncode({
-                'system_instruction': {
-                  'parts': [
-                    {
-                      'text': '''
+            body: jsonEncode({
+              'system_instruction': {
+                'parts': [
+                  {
+                    'text': '''
 You are Siri, a friendly personal AI voice assistant.
 
 Your name is Siri.
@@ -790,57 +880,9 @@ Rules:
 - If the user asks in English, answer in English.
 - Keep answers natural, helpful and concise.
 - Do not use unnecessary markdown.
-- Never claim that you performed a phone/device action unless
-  the app actually performed that action.
+- Never claim that you performed a phone or device action
+  unless the app actually performed that action.
 - For normal questions, answer directly.
 '''
                     }
-                  ],
-                },
-
-                'contents': [
-                  {
-                    'role': 'user',
-                    'parts': [
-                      {
-                        'text': prompt,
-                      }
-                    ],
-                  }
-                ],
-
-                'generationConfig': {
-                  'maxOutputTokens': 1024,
-                },
-              }),
-            )
-            .timeout(
-              const Duration(seconds: 30),
-            );
-
-        if (response.statusCode == 200) {
-          final data =
-              jsonDecode(response.body);
-
-          final candidates =
-              data['candidates'];
-
-          if (candidates is List &&
-              candidates.isNotEmpty) {
-            final content =
-                candidates[0]['content'];
-
-            final parts =
-                content?['parts'];
-
-            if (parts is List &&
-                parts.isNotEmpty) {
-              final text =
-                  parts[0]['text'];
-
-              if (text is String &&
-                  text.trim().isNotEmpty) {
-                return text.trim();
-              }
-            }
-       
+                  
