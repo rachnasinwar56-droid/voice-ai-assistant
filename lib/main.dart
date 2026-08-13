@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
@@ -13,10 +12,6 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SiriApp());
 }
-
-// ============================================================
-// SIRI APP
-// ============================================================
 
 class SiriApp extends StatelessWidget {
   const SiriApp({super.key});
@@ -40,10 +35,6 @@ class SiriApp extends StatelessWidget {
   }
 }
 
-// ============================================================
-// SIRI HOME
-// ============================================================
-
 class SiriHome extends StatefulWidget {
   const SiriHome({super.key});
 
@@ -60,9 +51,6 @@ class _SiriHomeState extends State<SiriHome> {
   static const String siriPhotoUrl =
       'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Siri_logo.svg/512px-Siri_logo.svg.png';
 
-  static const MethodChannel nativeChannel =
-      MethodChannel('siri_native');
-
   late final GeminiService _gemini;
 
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -77,22 +65,19 @@ class _SiriHomeState extends State<SiriHome> {
   bool _listening = false;
   bool _thinking = false;
   bool _speaking = false;
-  bool _sendingSms = false;
 
   @override
   void initState() {
     super.initState();
 
-    _gemini = GeminiService(
-      apiKey: apiKey,
-    );
+    _gemini = GeminiService(apiKey: apiKey);
 
     _initializeSpeech();
     _initializeTts();
   }
 
   // ==========================================================
-  // SPEECH INITIALIZATION
+  // SPEECH RECOGNITION
   // ==========================================================
 
   Future<void> _initializeSpeech() async {
@@ -149,6 +134,10 @@ class _SiriHomeState extends State<SiriHome> {
       if (Platform.isAndroid) {
         await _tts.awaitSpeakCompletion(true);
       }
+
+      try {
+        await _tts.setLanguage('hi-IN');
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -156,17 +145,18 @@ class _SiriHomeState extends State<SiriHome> {
     if (text.trim().isEmpty) return;
 
     try {
-      if (mounted) {
-        setState(() {
-          _speaking = true;
-        });
-      }
+      await _tts.stop();
+
+      if (!mounted) return;
+
+      setState(() {
+        _speaking = true;
+      });
 
       try {
         await _tts.setLanguage('hi-IN');
       } catch (_) {}
 
-      await _tts.stop();
       await _tts.speak(text);
 
       if (!mounted) return;
@@ -184,11 +174,11 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   // ==========================================================
-  // MICROPHONE
+  // VOICE INPUT
   // ==========================================================
 
   Future<void> _startListening() async {
-    if (_thinking || _sendingSms) return;
+    if (_thinking || _speaking) return;
 
     final permission = await Permission.microphone.request();
 
@@ -208,11 +198,13 @@ class _SiriHomeState extends State<SiriHome> {
 
     await _tts.stop();
 
-    if (mounted) {
-      setState(() {
-        _listening = true;
-      });
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _listening = true;
+      _speaking = false;
+      _controller.clear();
+    });
 
     try {
       await _speech.listen(
@@ -222,10 +214,10 @@ class _SiriHomeState extends State<SiriHome> {
         onResult: (result) {
           if (!mounted) return;
 
-          final words = result.recognizedWords.trim();
+          final recognized = result.recognizedWords.trim();
 
           setState(() {
-            _controller.text = words;
+            _controller.text = recognized;
             _controller.selection = TextSelection.fromPosition(
               TextPosition(
                 offset: _controller.text.length,
@@ -233,14 +225,12 @@ class _SiriHomeState extends State<SiriHome> {
             );
           });
 
-          if (result.finalResult) {
+          if (result.finalResult && recognized.isNotEmpty) {
             setState(() {
               _listening = false;
             });
 
-            if (words.isNotEmpty) {
-              _sendMessage(words);
-            }
+            _handleVoiceCommand(recognized);
           }
         },
       );
@@ -250,6 +240,8 @@ class _SiriHomeState extends State<SiriHome> {
       setState(() {
         _listening = false;
       });
+
+      _show('Microphone start nahi ho saka.');
     }
   }
 
@@ -274,200 +266,599 @@ class _SiriHomeState extends State<SiriHome> {
   }
 
   // ==========================================================
-  // DIRECT SMS COMMAND
-  //
-  // Examples:
-  //
-  // Raj ko message karo main aa raha hu
-  // Raj को message करो मैं आ रहा हूँ
-  // Send SMS to Raj I am coming
-  // Raj ko sms bhejo main aa raha hu
+  // VOICE COMMAND ENGINE
   // ==========================================================
 
-  Future<bool> _handleSmsCommand(String text) async {
-    final lower = text.toLowerCase().trim();
+  Future<void> _handleVoiceCommand(String text) async {
+    final command = text.trim();
 
-    final smsWords = [
-      'message',
-      'msg',
-      'sms',
-      'मैसेज',
-      'मैसेज करो',
-      'एसएमएस',
-    ];
+    if (command.isEmpty) return;
 
-    final containsSmsWord = smsWords.any(
-      (word) => lower.contains(word.toLowerCase()),
-    );
+    final lower = command.toLowerCase();
 
-    if (!containsSmsWord) {
-      return false;
-    }
+    // --------------------------------------------------------
+    // CALL COMMAND
+    // Example:
+    // "Raj ko call karo"
+    // --------------------------------------------------------
 
-    String? contactName;
-    String? message;
-
-    // ----------------------------------------------------------
-    // Hindi / Hinglish:
-    //
-    // Raj ko message karo main aa raha hu
-    // Raj को message करो मैं आ रहा हूँ
-    // Raj ko sms bhejo main aa raha hu
-    // ----------------------------------------------------------
-
-    final hindiRegex = RegExp(
-      r'^\s*(.+?)\s+(?:ko|को)\s+(?:message|msg|sms|मैसेज|एसएमएस)'
-      r'(?:\s+(?:karo|kar do|bhejo|भेजो|करो|कर दो))?\s*(.*)$',
-      caseSensitive: false,
-    );
-
-    final hindiMatch = hindiRegex.firstMatch(text);
-
-    if (hindiMatch != null) {
-      contactName = hindiMatch.group(1)?.trim();
-      message = hindiMatch.group(2)?.trim();
-    }
-
-    // ----------------------------------------------------------
-    // English:
-    //
-    // Send message to Raj I am coming
-    // Send SMS to Raj I am coming
-    // ----------------------------------------------------------
-
-    if (contactName == null) {
-      final englishRegex = RegExp(
-        r'^\s*(?:send\s+)?(?:message|msg|sms)\s+'
-        r'(?:to|for)\s+(.+?)\s+(.+)$',
-        caseSensitive: false,
+    if (_containsAny(lower, [
+      'call karo',
+      'call kar',
+      'phone karo',
+      'फोन करो',
+      'कॉल करो',
+    ])) {
+      final name = _extractPersonName(
+        command,
+        [
+          'ko call karo',
+          'ko call kar',
+          'ko phone karo',
+          'को कॉल करो',
+          'को फोन करो',
+        ],
       );
 
-      final englishMatch = englishRegex.firstMatch(text);
-
-      if (englishMatch != null) {
-        contactName = englishMatch.group(1)?.trim();
-        message = englishMatch.group(2)?.trim();
+      if (name.isNotEmpty) {
+        await _makeCallByName(name);
+        return;
       }
     }
 
-    if (contactName == null || contactName.isEmpty) {
-      return false;
+    // --------------------------------------------------------
+    // SMS COMMAND
+    // Example:
+    // "Raj ko SMS karo main aa raha hu"
+    // --------------------------------------------------------
+
+    if (_containsAny(lower, [
+      'sms karo',
+      'sms kar',
+      'message karo',
+      'message kar',
+      'मैसेज करो',
+      'मैसेज कर',
+      'एसएमएस करो',
+    ])) {
+      final parsed = _parseMessageCommand(command);
+
+      if (parsed != null) {
+        await _sendSmsByName(
+          parsed.name,
+          parsed.message,
+        );
+        return;
+      }
     }
 
-    // Remove accidental command words from contact name.
-    contactName = contactName
+    // --------------------------------------------------------
+    // WHATSAPP COMMAND
+    // Example:
+    // "Raj ko WhatsApp message karo main aa raha hu"
+    // --------------------------------------------------------
+
+    if (_containsAny(lower, [
+      'whatsapp',
+      'व्हाट्सऐप',
+      'व्हाट्सएप',
+    ])) {
+      final parsed = _parseWhatsAppCommand(command);
+
+      if (parsed != null) {
+        await _openWhatsApp(
+          parsed.name,
+          parsed.message,
+        );
+        return;
+      }
+    }
+
+    // --------------------------------------------------------
+    // NORMAL GEMINI QUESTION
+    // --------------------------------------------------------
+
+    await _sendMessage(command);
+  }
+
+  bool _containsAny(String text, List<String> values) {
+    for (final value in values) {
+      if (text.contains(value.toLowerCase())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // ==========================================================
+  // NAME EXTRACTION
+  // ==========================================================
+
+  String _extractPersonName(
+    String text,
+    List<String> markers,
+  ) {
+    String result = text;
+
+    for (final marker in markers) {
+      final index = result.toLowerCase().indexOf(
+            marker.toLowerCase(),
+          );
+
+      if (index >= 0) {
+        result = result.substring(0, index);
+        break;
+      }
+    }
+
+    result = result
         .replaceAll(
           RegExp(
-            r'\s+(ko|को)\s*$',
+            r'^(raj|rahul|rohan|amit|ajay)\s+',
             caseSensitive: false,
           ),
           '',
         )
         .trim();
 
-    if (message == null || message.trim().isEmpty) {
-      _show('Message kya bhejna hai?');
-
-      await _speak(
-        'Message kya bhejna hai?',
-      );
-
-      return true;
-    }
-
-    message = message.trim();
-
-    if (!mounted) return true;
-
-    setState(() {
-      _sendingSms = true;
-    });
-
-    try {
-      // Ask Android native code to:
-      // 1. Find contact
-      // 2. Get phone number
-      // 3. Send SMS
-      final result = await nativeChannel.invokeMethod(
-        'sendSmsToContact',
-        {
-          'contactName': contactName,
-          'message': message,
-        },
-      );
-
-      final success = result is Map &&
-          result['success'] == true;
-
-      if (success) {
-        final sentTo =
-            result['contactName']?.toString() ?? contactName;
-
-        _addAssistantMessage(
-          'SMS sent to $sentTo.',
-        );
-
-        await _speak(
-          '$sentTo को message भेज दिया है।',
-        );
-      } else {
-        final error =
-            result is Map
-                ? result['error']?.toString()
-                : null;
-
-        final errorText =
-            error == null || error.isEmpty
-                ? 'Contact नहीं मिला या SMS नहीं भेजा जा सका।'
-                : error;
-
-        _show(errorText);
-
-        await _speak(errorText);
-      }
-    } on PlatformException catch (e) {
-      String messageText;
-
-      switch (e.code) {
-        case 'SMS_PERMISSION':
-          messageText =
-              'SMS permission की जरूरत है। कृपया Allow करें।';
-          break;
-
-        case 'CONTACT_PERMISSION':
-          messageText =
-              'Contacts permission की जरूरत है।';
-          break;
-
-        case 'CONTACT_NOT_FOUND':
-          messageText =
-              '$contactName नाम का contact नहीं मिला।';
-          break;
-
-        default:
-          messageText =
-              e.message ?? 'SMS भेजने में समस्या हुई।';
-      }
-
-      _show(messageText);
-      await _speak(messageText);
-    } catch (e) {
-      _show('SMS error: $e');
-      await _speak('SMS भेजने में समस्या हुई।');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _sendingSms = false;
-        });
-      }
-    }
-
-    return true;
+    return result.trim();
   }
 
   // ==========================================================
-  // SEND / GEMINI
+  // MESSAGE PARSER
+  // ==========================================================
+
+  ParsedCommand? _parseMessageCommand(String text) {
+    final patterns = [
+      RegExp(
+        r'^(.+?)\s+ko\s+(?:sms|message)\s+(?:karo|kar)\s+(.+)$',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'^(.+?)\s+ko\s+(?:मैसेज|एसएमएस)\s+(?:करो|कर)\s+(.+)$',
+      ),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+
+      if (match != null) {
+        return ParsedCommand(
+          name: match.group(1)!.trim(),
+          message: match.group(2)!.trim(),
+        );
+      }
+    }
+
+    return null;
+  }
+
+  // ==========================================================
+  // WHATSAPP PARSER
+  // ==========================================================
+
+  ParsedCommand? _parseWhatsAppCommand(String text) {
+    final patterns = [
+      RegExp(
+        r'^(.+?)\s+ko\s+(?:whatsapp\s+)?(?:message\s+)?(?:karo|kar)\s+(.+)$',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'^(.+?)\s+ko\s+whatsapp\s+(.+)$',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+
+      if (match != null) {
+        return ParsedCommand(
+          name: match.group(1)!.trim(),
+          message: match.group(2)!.trim(),
+        );
+      }
+    }
+
+    return null;
+  }
+
+  // ==========================================================
+  // CONTACT NAME -> PHONE NUMBER
+  // ==========================================================
+
+  Future<String?> _findContactNumber(String name) async {
+    // Is version me contact database directly access nahi kiya gaya.
+    //
+    // Isliye pehle user ko contact number enter karne ka option
+    // diya jayega.
+    //
+    // Automatic contact directory lookup ke liye contacts_service
+    // package add kiya ja sakta hai.
+
+    return null;
+  }
+
+  // ==========================================================
+  // CALL
+  // ==========================================================
+
+  Future<void> _makeCallByName(String name) async {
+    final number = await _askForNumber(
+      title: 'Call contact',
+      name: name,
+    );
+
+    if (number == null || number.trim().isEmpty) {
+      return;
+    }
+
+    final permission = await Permission.phone.request();
+
+    if (!permission.isGranted) {
+      _show('Phone permission required.');
+      await _speak('Phone permission chahiye.');
+      return;
+    }
+
+    try {
+      final intent = AndroidIntent(
+        action: 'android.intent.action.CALL',
+        data: 'tel:${_cleanNumber(number)}',
+      );
+
+      await intent.launch();
+
+      await _speak('$name ko call kar rahi hoon.');
+    } catch (e) {
+      _show('Call start nahi ho saka.');
+      await _speak('Call start nahi ho saka.');
+    }
+  }
+
+  // ==========================================================
+  // SMS
+  // ==========================================================
+
+  Future<void> _sendSmsByName(
+    String name,
+    String message,
+  ) async {
+    final number = await _askForNumber(
+      title: 'SMS contact',
+      name: name,
+    );
+
+    if (number == null || number.trim().isEmpty) {
+      return;
+    }
+
+    final permission = await Permission.sms.request();
+
+    if (!permission.isGranted) {
+      _show('SMS permission required.');
+      await _speak('SMS permission chahiye.');
+      return;
+    }
+
+    try {
+      final intent = AndroidIntent(
+        action: 'android.intent.action.SENDTO',
+        data: 'smsto:${_cleanNumber(number)}',
+        arguments: <String, dynamic>{
+          'sms_body': message,
+        },
+      );
+
+      await intent.launch();
+
+      await _speak(
+        '$name ke liye message tayyar hai.',
+      );
+    } catch (_) {
+      _show('SMS app open nahi ho saki.');
+      await _speak('SMS app open nahi ho saki.');
+    }
+  }
+
+  // ==========================================================
+  // WHATSAPP
+  // ==========================================================
+
+  Future<void> _openWhatsApp(
+    String name,
+    String message,
+  ) async {
+    final number = await _askForNumber(
+      title: 'WhatsApp contact',
+      name: name,
+    );
+
+    if (number == null || number.trim().isEmpty) {
+      return;
+    }
+
+    final clean = _cleanNumber(number);
+
+    try {
+      final intent = AndroidIntent(
+        action: 'android.intent.action.VIEW',
+        data: 'https://wa.me/$clean?text=${Uri.encodeComponent(message)}',
+      );
+
+      await intent.launch();
+
+      await _speak(
+        '$name ka WhatsApp message tayyar hai.',
+      );
+    } catch (_) {
+      _show('WhatsApp open nahi ho saka.');
+      await _speak('WhatsApp open nahi ho saka.');
+    }
+  }
+
+  String _cleanNumber(String value) {
+    return value.replaceAll(
+      RegExp(r'[^0-9+]'),
+      '',
+    );
+  }
+
+  // ==========================================================
+  // NUMBER DIALOG
+  // ==========================================================
+
+  Future<String?> _askForNumber({
+    required String title,
+    required String name,
+  }) async {
+    final controller = TextEditingController();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('$title: $name'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              hintText: 'Phone number',
+              labelText: 'Number',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  context,
+                  controller.text.trim(),
+                );
+              },
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    return result;
+  }
+
+  // ==========================================================
+  // NORMAL GEMINI CHAT
   // ==========================================================
 
   Future<void> _sendMessage([String? value]) async {
-    final text = (
+    final text = (value ?? _controller.text).trim();
+
+    if (text.isEmpty || _thinking) {
+      return;
+    }
+
+    if (apiKey.isEmpty) {
+      _show(
+        'GEMINI_API_KEY missing.\n'
+        'GitHub Secrets me GEMINI_API_KEY add karein.',
+      );
+      return;
+    }
+
+    try {
+      await _speech.stop();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    setState(() {
+      _listening = false;
+
+      _messages.add(
+        ChatMessage(
+          role: MessageRole.user,
+          text: text,
+        ),
+      );
+
+      _thinking = true;
+      _controller.clear();
+    });
+
+    _scrollBottom();
+
+    try {
+      final answer = await _gemini.ask(text);
+
+      if (!mounted) return;
+
+      setState(() {
+        _thinking = false;
+
+        _messages.add(
+          ChatMessage(
+            role: MessageRole.assistant,
+            text: answer,
+          ),
+        );
+      });
+
+      _scrollBottom();
+
+      await _speak(answer);
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _thinking = false;
+      });
+
+      _show('Gemini Error: $e');
+    }
+  }
+
+  // ==========================================================
+  // UI
+  // ==========================================================
+
+  void _scrollBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _show(String text) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    _speech.stop();
+    _tts.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Siri',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Stop Siri',
+            onPressed: () async {
+              await _tts.stop();
+
+              if (!mounted) return;
+
+              setState(() {
+                _speaking = false;
+              });
+            },
+            icon: Icon(
+              _speaking
+                  ? Icons.volume_up
+                  : Icons.volume_off,
+            ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              switch (value) {
+                case 'mic':
+                  await Permission.microphone.request();
+                  await _initializeSpeech();
+                  break;
+
+                case 'phone':
+                  await Permission.phone.request();
+                  break;
+
+                case 'sms':
+                  await Permission.sms.request();
+                  break;
+
+                case 'overlay':
+                  await _openOverlay();
+                  break;
+
+                case 'notification':
+                  await _openNotificationSettings();
+                  break;
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'mic',
+                child: Text('Microphone Permission'),
+              ),
+              PopupMenuItem(
+                value: 'phone',
+                child: Text('Phone Permission'),
+              ),
+              PopupMenuItem(
+                value: 'sms',
+                child: Text('SMS Permission'),
+              ),
+              PopupMenuItem(
+                value: 'overlay',
+                child: Text('Overlay Settings'),
+              ),
+              PopupMenuItem(
+                value: 'notification',
+                child: Text('Notification Access'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _status(),
+
+          Expanded(
+            child: _messages.isEmpty
+                ? _empty()
+                : ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length,
+                    itemBuilder: (_, index) {
+                      return _bubble(_messages[index]);
+                    },
+                  ),
+          ),
+
+          if (_thinking)
+            const Padding(
+              padding: EdgeInsets.all(10),
+              child: Row(
+                children: [
+                  Sized
