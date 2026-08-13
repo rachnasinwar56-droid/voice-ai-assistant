@@ -24,12 +24,12 @@ jobs:
           java-version: '17'
 
       # ----------------------------------------
-      # FLUTTER (Stable 3.24.5)
+      # FLUTTER
       # ----------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.27.0'
           channel: stable
           cache: true
 
@@ -40,34 +40,60 @@ jobs:
           dart --version
 
       # ----------------------------------------
-      # CREATE ANDROID PROJECT (WITH VALID NAME)
+      # CREATE ANDROID PROJECT
       # ----------------------------------------
       - name: Generate Android Project
         run: |
           flutter create --platforms=android --project-name=voice_ai_assistant .
 
       # ----------------------------------------
-      # FORCE MIN SDK 24
+      # FIX MIN SDK & COMPILE SDK FOR PLUGINS (speech_to_text fix)
       # ----------------------------------------
-      - name: Set Android minSdk 24
+      - name: Configure Android SDKs and Fix Plugins
         shell: bash
         run: |
+          # Set minSdk 24 and compileSdk 34 in app/build.gradle
           if [ -f "android/app/build.gradle.kts" ]; then
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
             sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle.kts
-            sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle.kts
-            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle.kts
+            sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 34/g' android/app/build.gradle.kts
+            sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]+/compileSdk = 34/g' android/app/build.gradle.kts
           fi
 
           if [ -f "android/app/build.gradle" ]; then
             sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
             sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
-            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle
-            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle
+            sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
+            sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 34/g' android/app/build.gradle
           fi
 
-          echo "Android minSdk:"
-          grep -R "minSdk" android/app || true
+          # Force compileSdkVersion 34 for all plugin subprojects
+          if [ -f "android/build.gradle" ]; then
+            cat << 'EOF' >> android/build.gradle
+
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                compileSdkVersion 34
+            }
+        }
+    }
+}
+EOF
+          fi
+
+      # ----------------------------------------
+      # CHECK FOR BROKEN JAVA VERSION
+      # ----------------------------------------
+      - name: Fix invalid JavaVersion values
+        shell: bash
+        run: |
+          find android -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -print0 | while IFS= read -r -d '' file
+          do
+            sed -i 's/VERSION_17_8/VERSION_17/g' "$file"
+            sed -i 's/JavaVersion.VERSION_17_8/JavaVersion.VERSION_17/g' "$file"
+          done
 
       # ----------------------------------------
       # FLUTTER PACKAGES
@@ -104,4 +130,5 @@ jobs:
           name: Siri-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+          
           
