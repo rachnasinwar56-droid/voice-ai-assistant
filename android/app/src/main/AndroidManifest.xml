@@ -1,16 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet / Gemini API -->
+    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Microphone -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Phone / Calls -->
+    <!-- Phone -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-
-    <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- SMS -->
@@ -18,45 +16,16 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
-    <!-- Overlay / Floating Assistant -->
+    <!-- Overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Bluetooth -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-
-    <!-- Location / GPS -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-    <!-- Wi-Fi -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-
     <!-- TTS -->
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
-        </intent>
-
-        <!-- Phone apps -->
-        <intent>
-            <action android:name="android.intent.action.DIAL" />
-        </intent>
-
-        <!-- SMS apps -->
-        <intent>
-            <action android:name="android.intent.action.SENDTO" />
-            <data android:scheme="smsto" />
-        </intent>
-
-        <!-- WhatsApp / other messaging apps -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="https" />
         </intent>
     </queries>
 
@@ -86,7 +55,6 @@
 
         </activity>
 
-        <!-- Flutter V2 Embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
