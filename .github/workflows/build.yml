@@ -21,6 +21,18 @@ jobs:
 
 
       # ========================================================
+      # JAVA 17
+      # ========================================================
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+
+      # ========================================================
       # FLUTTER
       # ========================================================
 
@@ -32,128 +44,102 @@ jobs:
           cache: true
 
 
-      - name: Flutter Version
-        run: flutter --version
+      # ========================================================
+      # SHOW VERSIONS
+      # ========================================================
+
+      - name: Show versions
+        run: |
+          java -version
+          flutter --version
+          dart --version
 
 
       # ========================================================
-      # CREATE ANDROID PROJECT IF REQUIRED
+      # GENERATE ANDROID PROJECT
       # ========================================================
 
       - name: Generate Android Project
-        run: flutter create --platforms=android .
+        run: |
+          flutter create --platforms=android .
 
 
       # ========================================================
-      # FIX KOTLIN
-      #
-      # flutter_tts documentation recommends Kotlin 1.9.10
+      # FIX ANDROID BUILD FILE
       # ========================================================
 
-      - name: Fix Kotlin Version
+      - name: Configure Android Java 17 and minSdk 24
         shell: bash
         run: |
-          set -e
+          python3 <<'PY'
+          from pathlib import Path
 
-          echo "Searching Kotlin configuration..."
+          path = Path("android/app/build.gradle")
 
-          if [ -f "android/settings.gradle.kts" ]; then
-            echo "Found settings.gradle.kts"
+          if path.exists():
+              text = path.read_text()
 
-            sed -i -E \
-              's/(id\("org\.jetbrains\.kotlin\.android"\)[[:space:]]+version[[:space:]]+")([^"]+)(" apply false)/\11.9.10\3/g' \
-              android/settings.gradle.kts
+              text = text.replace(
+                  "JavaVersion.VERSION_17_8",
+                  "JavaVersion.VERSION_17"
+              )
 
-            echo "Kotlin configuration:"
-            grep -n "kotlin.android" android/settings.gradle.kts || true
-          fi
+              text = text.replace(
+                  "JavaVersion.VERSION_17_8",
+                  "JavaVersion.VERSION_17"
+              )
 
-          if [ -f "android/settings.gradle" ]; then
-            echo "Found settings.gradle"
+              text = text.replace(
+                  "minSdkVersion flutter.minSdkVersion",
+                  "minSdkVersion 24"
+              )
 
-            sed -i -E \
-              "s/(id[[:space:]]+['\"]org\.jetbrains\.kotlin\.android['\"][[:space:]]+version[[:space:]]+['\"])[^'\"]+(['\"][[:space:]]+apply false)/\11.9.10\2/g" \
-              android/settings.gradle
+              text = text.replace(
+                  "minSdk = flutter.minSdkVersion",
+                  "minSdk = 24"
+              )
 
-            echo "Kotlin configuration:"
-            grep -n "kotlin.android" android/settings.gradle || true
-          fi
+              path.write_text(text)
 
-          if [ -f "android/build.gradle" ]; then
-            sed -i -E \
-              "s/(kotlin_version[[:space:]]*=[[:space:]]*['\"])[^'\"]+(['\"])/\11.9.10\2/g" \
-              android/build.gradle || true
+          # Kotlin DSL, if Flutter generated it.
+          kts = Path("android/app/build.gradle.kts")
 
-            grep -n "kotlin_version" android/build.gradle || true
-          fi
+          if kts.exists():
+              text = kts.read_text()
+
+              text = text.replace(
+                  "JavaVersion.VERSION_17_8",
+                  "JavaVersion.VERSION_17"
+              )
+
+              text = text.replace(
+                  "minSdk = flutter.minSdkVersion",
+                  "minSdk = 24"
+              )
+
+              kts.write_text(text)
+
+          print("Android configuration fixed.")
+          PY
 
 
       # ========================================================
-      # FIX ANDROID MIN SDK + JAVA/KOTLIN JVM
+      # VERIFY JAVA CONFIG
       # ========================================================
 
-      - name: Fix Android Build Settings
-        shell: bash
+      - name: Verify Android configuration
         run: |
-          set -e
+          echo "Checking JavaVersion..."
+          grep -R "VERSION_17" android || true
 
-          echo "Fixing Android build settings..."
+          echo "Checking minSdk..."
+          grep -R "minSdk" android/app || true
 
-          if [ -f "android/app/build.gradle.kts" ]; then
-
-            sed -i -E \
-              's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' \
-              android/app/build.gradle.kts || true
-
-            sed -i -E \
-              's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' \
-              android/app/build.gradle.kts || true
-
-            sed -i -E \
-              's/JavaVersion\.VERSION_[0-9]+/JavaVersion.VERSION_17/g' \
-              android/app/build.gradle.kts || true
-
-            echo "----- app/build.gradle.kts -----"
-            cat android/app/build.gradle.kts
+          echo "Checking invalid VERSION_17_8..."
+          if grep -R "VERSION_17_8" android; then
+            echo "ERROR: VERSION_17_8 still exists."
+            exit 1
           fi
-
-
-          if [ -f "android/app/build.gradle" ]; then
-
-            sed -i -E \
-              's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' \
-              android/app/build.gradle || true
-
-            sed -i -E \
-              's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' \
-              android/app/build.gradle || true
-
-            sed -i -E \
-              's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' \
-              android/app/build.gradle || true
-
-            sed -i -E \
-              's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' \
-              android/app/build.gradle || true
-
-            sed -i -E \
-              's/JavaVersion\.VERSION_[0-9]+/JavaVersion.VERSION_17/g' \
-              android/app/build.gradle || true
-
-            echo "----- app/build.gradle -----"
-            cat android/app/build.gradle
-          fi
-
-
-      # ========================================================
-      # FORCE JAVA 17
-      # ========================================================
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
 
 
       # ========================================================
@@ -169,7 +155,7 @@ jobs:
       # ========================================================
 
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: flutter analyze
         continue-on-error: true
 
 
