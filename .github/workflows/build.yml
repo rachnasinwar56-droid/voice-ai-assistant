@@ -30,12 +30,27 @@ jobs:
       - name: Generate Android Project
         run: flutter create --platforms=android --project-name=voice_ai_assistant .
 
-      # यह स्टेप सीधे settings.gradle में Kotlin वर्ज़न 1.9.24 सेट कर देगा
-      - name: Force Kotlin Version to 1.9.24
+      # यह पाइथन स्क्रिप्ट settings.gradle को बिना तोड़े सिर्फ Kotlin वर्ज़न अपडेट करेगी
+      - name: Safe Patch Kotlin Version in settings.gradle
         run: |
           SETTINGS_FILE="android/settings.gradle"
           if [ -f "$SETTINGS_FILE" ]; then
-            sed -i 's/version "[0-9.]*"/version "1.9.24"/g' "$SETTINGS_FILE"
+            python3 -c '
+            path = "android/settings.gradle"
+            with open(path, "r") as f:
+                content = f.read()
+            
+            import re
+            # Check if kotlin plugin exists, update version or insert it safely
+            if "org.jetbrains.kotlin.android" in content:
+                content = re.sub(r"id\s*[\"\x27]org\.jetbrains\.kotlin\.android[\"\x27]\s+version\s*[\"\x27][^\"\x27]*[\"\x27]", "id \"org.jetbrains.kotlin.android\" version \"1.9.24\"", content)
+            else:
+                # If not present, inject it inside plugins block
+                content = content.replace("plugins {", "plugins {\n    id \"org.jetbrains.kotlin.android\" version \"1.9.24\" apply false")
+                
+            with open(path, "w") as f:
+                f.write(content)
+            '
           fi
 
       - name: Flutter Clean & Pub Get
