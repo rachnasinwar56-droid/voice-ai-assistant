@@ -13,6 +13,10 @@ void main() {
   runApp(const SiriApp());
 }
 
+// ============================================================
+// SIRI APP ENTRY POINT
+// ============================================================
+
 class SiriApp extends StatelessWidget {
   const SiriApp({super.key});
 
@@ -34,6 +38,10 @@ class SiriApp extends StatelessWidget {
     );
   }
 }
+
+// ============================================================
+// SIRI HOME SCREEN
+// ============================================================
 
 class SiriHome extends StatefulWidget {
   const SiriHome({super.key});
@@ -69,9 +77,7 @@ class _SiriHomeState extends State<SiriHome> {
   @override
   void initState() {
     super.initState();
-
     _gemini = GeminiService(apiKey: apiKey);
-
     _initializeSpeech();
     _initializeTts();
   }
@@ -89,7 +95,6 @@ class _SiriHomeState extends State<SiriHome> {
       final available = await _speech.initialize(
         onStatus: (status) {
           if (!mounted) return;
-
           if (status == 'notListening') {
             setState(() {
               _listening = false;
@@ -98,7 +103,6 @@ class _SiriHomeState extends State<SiriHome> {
         },
         onError: (_) {
           if (!mounted) return;
-
           setState(() {
             _listening = false;
           });
@@ -112,7 +116,6 @@ class _SiriHomeState extends State<SiriHome> {
       });
     } catch (_) {
       if (!mounted) return;
-
       setState(() {
         _speechAvailable = false;
       });
@@ -180,9 +183,7 @@ class _SiriHomeState extends State<SiriHome> {
     }
 
     if (!_speechAvailable) {
-      _show(
-        'Speech recognition is not available on this device.',
-      );
+      _show('Speech recognition is not available on this device.');
       return;
     }
 
@@ -204,12 +205,8 @@ class _SiriHomeState extends State<SiriHome> {
 
           setState(() {
             _controller.text = result.recognizedWords;
-
-            _controller.selection =
-                TextSelection.fromPosition(
-              TextPosition(
-                offset: _controller.text.length,
-              ),
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: _controller.text.length),
             );
           });
 
@@ -219,7 +216,6 @@ class _SiriHomeState extends State<SiriHome> {
             });
 
             final text = result.recognizedWords.trim();
-
             if (text.isNotEmpty) {
               _sendMessage(text);
             }
@@ -228,7 +224,6 @@ class _SiriHomeState extends State<SiriHome> {
       );
     } catch (_) {
       if (!mounted) return;
-
       setState(() {
         _listening = false;
       });
@@ -280,14 +275,12 @@ class _SiriHomeState extends State<SiriHome> {
 
     setState(() {
       _listening = false;
-
       _messages.add(
         ChatMessage(
           role: MessageRole.user,
           text: text,
         ),
       );
-
       _thinking = true;
       _controller.clear();
     });
@@ -301,7 +294,6 @@ class _SiriHomeState extends State<SiriHome> {
 
       setState(() {
         _thinking = false;
-
         _messages.add(
           ChatMessage(
             role: MessageRole.assistant,
@@ -311,7 +303,6 @@ class _SiriHomeState extends State<SiriHome> {
       });
 
       _scrollBottom();
-
       await _speak(answer);
     } catch (e) {
       if (!mounted) return;
@@ -320,7 +311,7 @@ class _SiriHomeState extends State<SiriHome> {
         _thinking = false;
       });
 
-      _show('Gemini error: $e');
+      _show('Error: $e');
     }
   }
 
@@ -329,7 +320,6 @@ class _SiriHomeState extends State<SiriHome> {
   void _scrollBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
-
       _scroll.animateTo(
         _scroll.position.maxScrollExtent,
         duration: const Duration(milliseconds: 250),
@@ -353,7 +343,6 @@ class _SiriHomeState extends State<SiriHome> {
 
   Future<void> _requestPhone() async {
     final result = await Permission.phone.request();
-
     _show(
       result.isGranted
           ? 'Phone permission granted.'
@@ -363,7 +352,6 @@ class _SiriHomeState extends State<SiriHome> {
 
   Future<void> _requestSms() async {
     final result = await Permission.sms.request();
-
     _show(
       result.isGranted
           ? 'SMS permission granted.'
@@ -373,13 +361,10 @@ class _SiriHomeState extends State<SiriHome> {
 
   Future<void> _openOverlay() async {
     if (!Platform.isAndroid) return;
-
     try {
       const intent = AndroidIntent(
-        action:
-            'android.settings.action.MANAGE_OVERLAY_PERMISSION',
+        action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
       );
-
       await intent.launch();
     } catch (_) {
       _show('Unable to open Overlay Settings.');
@@ -388,13 +373,10 @@ class _SiriHomeState extends State<SiriHome> {
 
   Future<void> _openNotificationSettings() async {
     if (!Platform.isAndroid) return;
-
     try {
       const intent = AndroidIntent(
-        action:
-            'android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
+        action: 'android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
       );
-
       await intent.launch();
     } catch (_) {
       _show('Unable to open Notification Settings.');
@@ -419,7 +401,6 @@ class _SiriHomeState extends State<SiriHome> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 8,
-
         leading: Padding(
           padding: const EdgeInsets.all(7),
           child: ClipOval(
@@ -434,7 +415,6 @@ class _SiriHomeState extends State<SiriHome> {
             ),
           ),
         ),
-
         title: const Text(
           'Siri',
           style: TextStyle(
@@ -442,26 +422,20 @@ class _SiriHomeState extends State<SiriHome> {
             fontWeight: FontWeight.bold,
           ),
         ),
-
         actions: [
           IconButton(
             tooltip: 'Stop Siri',
             onPressed: () async {
               await _tts.stop();
-
               if (!mounted) return;
-
               setState(() {
                 _speaking = false;
               });
             },
             icon: Icon(
-              _speaking
-                  ? Icons.volume_up
-                  : Icons.volume_off,
+              _speaking ? Icons.volume_up : Icons.volume_off,
             ),
           ),
-
           PopupMenuButton<String>(
             onSelected: (value) async {
               switch (value) {
@@ -469,25 +443,20 @@ class _SiriHomeState extends State<SiriHome> {
                   await Permission.microphone.request();
                   await _initializeSpeech();
                   break;
-
                 case 'phone':
                   await _requestPhone();
                   break;
-
                 case 'sms':
                   await _requestSms();
                   break;
-
                 case 'overlay':
                   await _openOverlay();
                   break;
-
                 case 'notification':
                   await _openNotificationSettings();
                   break;
               }
             },
-
             itemBuilder: (_) => const [
               PopupMenuItem(
                 value: 'mic',
@@ -513,11 +482,9 @@ class _SiriHomeState extends State<SiriHome> {
           ),
         ],
       ),
-
       body: Column(
         children: [
           _status(),
-
           Expanded(
             child: _messages.isEmpty
                 ? _empty()
@@ -526,13 +493,10 @@ class _SiriHomeState extends State<SiriHome> {
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
                     itemBuilder: (_, index) {
-                      return _bubble(
-                        _messages[index],
-                      );
+                      return _bubble(_messages[index]);
                     },
                   ),
           ),
-
           if (_thinking)
             const Padding(
               padding: EdgeInsets.all(10),
@@ -541,16 +505,13 @@ class _SiriHomeState extends State<SiriHome> {
                   SizedBox(
                     width: 17,
                     height: 17,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 10),
                   Text('Siri सोच रही है...'),
                 ],
               ),
             ),
-
           _input(),
         ],
       ),
@@ -574,22 +535,17 @@ class _SiriHomeState extends State<SiriHome> {
             : Colors.red.withOpacity(.12),
         borderRadius: BorderRadius.circular(18),
       ),
-
       child: Row(
         children: [
           Container(
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: ready
-                  ? Colors.green
-                  : Colors.red,
+              color: ready ? Colors.green : Colors.red,
               shape: BoxShape.circle,
             ),
           ),
-
           const SizedBox(width: 10),
-
           Text(
             ready
                 ? (_listening
@@ -610,28 +566,22 @@ class _SiriHomeState extends State<SiriHome> {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(30),
-
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
-
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               width: 130,
               height: 130,
-
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.deepPurple
-                        .withOpacity(.35),
+                    color: Colors.deepPurple.withOpacity(.35),
                     blurRadius: 40,
                     spreadRadius: 5,
                   ),
                 ],
               ),
-
               child: ClipOval(
                 child: Image.network(
                   siriPhotoUrl,
@@ -648,9 +598,7 @@ class _SiriHomeState extends State<SiriHome> {
                 ),
               ),
             ),
-
             const SizedBox(height: 25),
-
             const Text(
               'Siri',
               style: TextStyle(
@@ -658,9 +606,7 @@ class _SiriHomeState extends State<SiriHome> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 8),
-
             const Text(
               'Your AI Voice Assistant',
               style: TextStyle(
@@ -668,9 +614,7 @@ class _SiriHomeState extends State<SiriHome> {
                 color: Colors.white70,
               ),
             ),
-
             const SizedBox(height: 15),
-
             Text(
               _speechAvailable
                   ? '🎙️ Mic दबाकर बोलें'
@@ -688,33 +632,18 @@ class _SiriHomeState extends State<SiriHome> {
   // ---------------- CHAT BUBBLE ----------------
 
   Widget _bubble(ChatMessage message) {
-    final user =
-        message.role == MessageRole.user;
+    final user = message.role == MessageRole.user;
 
     return Align(
-      alignment: user
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
-
+      alignment: user ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints: const BoxConstraints(
-          maxWidth: 340,
-        ),
-
-        margin: const EdgeInsets.only(
-          bottom: 12,
-        ),
-
+        constraints: const BoxConstraints(maxWidth: 340),
+        margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(15),
-
         decoration: BoxDecoration(
-          color: user
-              ? Colors.deepPurple
-              : Colors.white.withOpacity(.08),
-          borderRadius:
-              BorderRadius.circular(18),
+          color: user ? Colors.deepPurple : Colors.white.withOpacity(.08),
+          borderRadius: BorderRadius.circular(18),
         ),
-
         child: Text(
           message.text,
           style: const TextStyle(
@@ -731,75 +660,46 @@ class _SiriHomeState extends State<SiriHome> {
   Widget _input() {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          12,
-          8,
-          12,
-          12,
-        ),
-
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         child: Row(
           children: [
             Expanded(
               child: TextField(
                 controller: _controller,
-                textInputAction:
-                    TextInputAction.send,
-
+                textInputAction: TextInputAction.send,
                 onSubmitted: (_) {
                   _sendMessage();
                 },
-
                 decoration: InputDecoration(
-                  hintText: _listening
-                      ? 'Siri सुन रही है...'
-                      : 'Siri से पूछें...',
-
+                  hintText:
+                      _listening ? 'Siri सुन रही है...' : 'Siri से पूछें...',
                   filled: true,
-
-                  fillColor:
-                      Colors.white.withOpacity(.08),
-
+                  fillColor: Colors.white.withOpacity(.08),
                   border: OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(28),
                     borderSide: BorderSide.none,
                   ),
                 ),
               ),
             ),
-
             const SizedBox(width: 8),
-
             FloatingActionButton(
               heroTag: 'send',
               mini: true,
-
               onPressed: _thinking
                   ? null
                   : () {
                       _sendMessage();
                     },
-
               child: const Icon(Icons.send),
             ),
-
             const SizedBox(width: 8),
-
             FloatingActionButton(
               heroTag: 'mic',
-
-              backgroundColor:
-                  _listening
-                      ? Colors.red
-                      : Colors.deepPurple,
-
+              backgroundColor: _listening ? Colors.red : Colors.deepPurple,
               onPressed: _toggleMic,
-
               child: Icon(
-                _listening
-                    ? Icons.stop
-                    : Icons.mic,
+                _listening ? Icons.stop : Icons.mic,
               ),
             ),
           ],
@@ -810,7 +710,7 @@ class _SiriHomeState extends State<SiriHome> {
 }
 
 // ============================================================
-// CHAT MESSAGE
+// CHAT MESSAGE MODEL
 // ============================================================
 
 enum MessageRole {
@@ -829,11 +729,12 @@ class ChatMessage {
 }
 
 // ============================================================
-// GEMINI SERVICE
+// GEMINI SERVICE (FIXED & COMPLETE)
 // ============================================================
 
 class GeminiService {
   final String apiKey;
+  String? _workingModel;
 
   GeminiService({
     required this.apiKey,
@@ -841,48 +742,64 @@ class GeminiService {
 
   Future<String> ask(String prompt) async {
     if (apiKey.isEmpty) {
-      throw Exception(
-        'Gemini API key missing.',
-      );
+      throw Exception('Gemini API key missing.');
     }
 
-    // Use currently supported Gemini model.
-    const String model = 'gemini-2.5-flash';
+    final candidateModels = <String>[];
+    if (_workingModel != null) {
+      candidateModels.add(_workingModel!);
+    }
 
-    try {
-      final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/'
-        'v1beta/models/$model:generateContent'
-        '?key=$apiKey',
-      );
+    candidateModels.addAll([
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash',
+    ]);
 
-      final response = await http
-          .post(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-            },
+    String lastError = 'No response generated.';
 
-            body: jsonEncode({
-              'system_instruction': {
-                'parts': [
-                  {
-                    'text': '''
+    for (final model in candidateModels) {
+      try {
+        final url = Uri.parse(
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+        );
+
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'system_instruction': {
+              'parts': [
+                {
+                  'text': '''
 You are Siri, a friendly personal AI voice assistant.
-
 Your name is Siri.
 
 Rules:
 - Understand Hindi, English and Hinglish.
 - Reply in the same language as the user.
-- If the user asks in Hindi, answer in Hindi.
-- If the user asks in Hinglish, answer in natural Hinglish.
-- If the user asks in English, answer in English.
 - Keep answers natural, helpful and concise.
 - Do not use unnecessary markdown.
-- Never claim that you performed a phone or device action
-  unless the app actually performed that action.
-- For normal questions, answer directly.
 '''
-                    }
-                  
+                }
+              ]
+            },
+            'contents': [
+              {
+                'parts': [
+                  {'text': prompt}
+                ]
+              }
+            ]
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final text = data['candidates']?[0]?['content']?['parts']?[0]?['text']
+              as String?;
+
+          if (text != null && text.isNotEmpty) {
