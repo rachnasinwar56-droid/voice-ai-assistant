@@ -82,6 +82,22 @@ jobs:
           done
 
       # ----------------------------------------
+      # FIX KOTLIN VERSION FOR FLUTTER_TTS
+      # ----------------------------------------
+      - name: Set Kotlin Version
+        shell: bash
+        run: |
+          if [ -f "android/build.gradle" ]; then
+            sed -i -E 's/ext\.kotlin_version[[:space:]]*=[[:space:]]*.*/ext.kotlin_version = "1.9.22"/g' android/build.gradle
+          fi
+          if [ -f "android/settings.gradle" ]; then
+            sed -i -E 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.22"/g' android/settings.gradle
+          fi
+          if [ -f "android/settings.gradle.kts" ]; then
+            sed -i -E 's/id\("org.jetbrains.kotlin.android"\) version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/g' android/settings.gradle.kts
+          fi
+
+      # ----------------------------------------
       # FLUTTER PACKAGES
       # ----------------------------------------
       - name: Flutter Clean
@@ -116,3 +132,4 @@ jobs:
           name: Siri-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+          
