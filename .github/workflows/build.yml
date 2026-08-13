@@ -27,38 +27,60 @@ jobs:
       - name: Generate Android Project
         run: flutter create --platforms=android .
 
-      - name: Fix Kotlin Version
+      # ==============================
+      # FIX MIN SDK 24
+      # ==============================
+      - name: Force Android minSdk 24
+        shell: bash
+        run: |
+          echo "Before fix:"
+          grep -R "minSdk" android/app || true
+
+          if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle.kts
+            sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle.kts
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle.kts
+          fi
+
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' android/app/build.gradle
+          fi
+
+          echo "After fix:"
+          grep -R "minSdk" android/app || true
+
+      # ==============================
+      # FIX KOTLIN
+      # ==============================
+      - name: Force Kotlin 2.2.20
         shell: bash
         run: |
           if [ -f "android/settings.gradle.kts" ]; then
-            sed -i -E 's/(id\("org\.jetbrains\.kotlin\.android"\) version ")[^"]+(" apply false)/\12.2.20\2/' android/settings.gradle.kts
+            sed -i -E 's/(id\("org\.jetbrains\.kotlin\.android"\)[[:space:]]+version[[:space:]]+")([^"]+)(" apply false)/\12.2.20\3/' android/settings.gradle.kts
           fi
 
           if [ -f "android/settings.gradle" ]; then
             sed -i -E "s/(id ['\"]org\.jetbrains\.kotlin\.android['\"] version ['\"])[^'\"]+(['\"] apply false)/\12.2.20\2/" android/settings.gradle
           fi
 
-      - name: Fix minSdk
-        shell: bash
-        run: |
-          if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i -E 's/minSdk\s*=\s*flutter\.minSdkVersion/minSdk = 24/g' android/app/build.gradle.kts
-            sed -i -E 's/minSdk\s*=\s*[0-9]+/minSdk = 24/g' android/app/build.gradle.kts
-          fi
-
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i -E 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
-            sed -i -E 's/minSdkVersion\s+[0-9]+/minSdkVersion 24/g' android/app/build.gradle
-          fi
+          echo "Kotlin configuration:"
+          grep -R "kotlin.android" android/settings.gradle* || true
 
       - name: Get Packages
         run: flutter pub get
 
-      # Analyze ko build blocker nahi banayenge
+      # Analyze warnings ko build fail nahi karne denge
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
         continue-on-error: true
 
+      # ==============================
+      # BUILD APK
+      # ==============================
       - name: Build APK
         run: |
           flutter build apk --release \
