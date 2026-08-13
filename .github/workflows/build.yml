@@ -40,6 +40,23 @@ jobs:
           dart --version
 
       # ----------------------------------------
+      # SETUP GLOBAL GRADLE KOTLIN FIX
+      # ----------------------------------------
+      - name: Setup Global Gradle Fixes
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          cat << 'EOF' > ~/.gradle/init.gradle
+          allprojects {
+              tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                  kotlinOptions {
+                      jvmTarget = "17"
+                  }
+              }
+          }
+          EOF
+
+      # ----------------------------------------
       # CREATE ANDROID PROJECT
       # ----------------------------------------
       - name: Generate Android Project
@@ -82,6 +99,10 @@ jobs:
             find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 34/g' {} +
             find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' {} +
             find "$HOME/.pub-cache" -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' {} +
+            
+            # Force JVM target 17 in plugin gradle files
+            find "$HOME/.pub-cache" -type f -name "*.gradle" -exec sed -i -E "s/jvmTarget = '1.8'/jvmTarget = '17'/g" {} +
+            find "$HOME/.pub-cache" -type f -name "*.gradle" -exec sed -i -E 's/jvmTarget = "1.8"/jvmTarget = "17"/g' {} +
           fi
 
       # ----------------------------------------
