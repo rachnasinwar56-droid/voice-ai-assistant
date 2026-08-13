@@ -2,7 +2,6 @@ name: Build Siri APK
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -13,17 +12,17 @@ jobs:
 
     steps:
 
-      # ======================================================
+      # ========================================================
       # CHECKOUT
-      # ======================================================
+      # ========================================================
 
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # ======================================================
+      # ========================================================
       # FLUTTER
-      # ======================================================
+      # ========================================================
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -37,34 +36,85 @@ jobs:
         run: flutter --version
 
 
-      # ======================================================
-      # GENERATE ANDROID PROJECT
-      # ======================================================
+      # ========================================================
+      # CREATE ANDROID PROJECT IF REQUIRED
+      # ========================================================
 
       - name: Generate Android Project
         run: flutter create --platforms=android .
 
 
-      # ======================================================
-      # MIN SDK 24
-      # ======================================================
+      # ========================================================
+      # FIX KOTLIN
+      #
+      # flutter_tts documentation recommends Kotlin 1.9.10
+      # ========================================================
 
-      - name: Force Android minSdk 24
+      - name: Fix Kotlin Version
         shell: bash
         run: |
+          set -e
 
-          echo "Checking Android build files..."
+          echo "Searching Kotlin configuration..."
+
+          if [ -f "android/settings.gradle.kts" ]; then
+            echo "Found settings.gradle.kts"
+
+            sed -i -E \
+              's/(id\("org\.jetbrains\.kotlin\.android"\)[[:space:]]+version[[:space:]]+")([^"]+)(" apply false)/\11.9.10\3/g' \
+              android/settings.gradle.kts
+
+            echo "Kotlin configuration:"
+            grep -n "kotlin.android" android/settings.gradle.kts || true
+          fi
+
+          if [ -f "android/settings.gradle" ]; then
+            echo "Found settings.gradle"
+
+            sed -i -E \
+              "s/(id[[:space:]]+['\"]org\.jetbrains\.kotlin\.android['\"][[:space:]]+version[[:space:]]+['\"])[^'\"]+(['\"][[:space:]]+apply false)/\11.9.10\2/g" \
+              android/settings.gradle
+
+            echo "Kotlin configuration:"
+            grep -n "kotlin.android" android/settings.gradle || true
+          fi
+
+          if [ -f "android/build.gradle" ]; then
+            sed -i -E \
+              "s/(kotlin_version[[:space:]]*=[[:space:]]*['\"])[^'\"]+(['\"])/\11.9.10\2/g" \
+              android/build.gradle || true
+
+            grep -n "kotlin_version" android/build.gradle || true
+          fi
+
+
+      # ========================================================
+      # FIX ANDROID MIN SDK + JAVA/KOTLIN JVM
+      # ========================================================
+
+      - name: Fix Android Build Settings
+        shell: bash
+        run: |
+          set -e
+
+          echo "Fixing Android build settings..."
 
           if [ -f "android/app/build.gradle.kts" ]; then
 
             sed -i -E \
               's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' \
-              android/app/build.gradle.kts
+              android/app/build.gradle.kts || true
 
             sed -i -E \
               's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' \
-              android/app/build.gradle.kts
+              android/app/build.gradle.kts || true
 
+            sed -i -E \
+              's/JavaVersion\.VERSION_[0-9]+/JavaVersion.VERSION_17/g' \
+              android/app/build.gradle.kts || true
+
+            echo "----- app/build.gradle.kts -----"
+            cat android/app/build.gradle.kts
           fi
 
 
@@ -72,54 +122,70 @@ jobs:
 
             sed -i -E \
               's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 24/g' \
-              android/app/build.gradle
+              android/app/build.gradle || true
 
             sed -i -E \
               's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' \
-              android/app/build.gradle
+              android/app/build.gradle || true
 
+            sed -i -E \
+              's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 24/g' \
+              android/app/build.gradle || true
+
+            sed -i -E \
+              's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' \
+              android/app/build.gradle || true
+
+            sed -i -E \
+              's/JavaVersion\.VERSION_[0-9]+/JavaVersion.VERSION_17/g' \
+              android/app/build.gradle || true
+
+            echo "----- app/build.gradle -----"
+            cat android/app/build.gradle
           fi
 
 
-          echo "Final minSdk configuration:"
+      # ========================================================
+      # FORCE JAVA 17
+      # ========================================================
 
-          grep -R "minSdk" android/app || true
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
 
-      # ======================================================
-      # PACKAGES
-      # ======================================================
+      # ========================================================
+      # GET PACKAGES
+      # ========================================================
 
-      - name: Flutter Pub Get
+      - name: Get Packages
         run: flutter pub get
 
 
-      # ======================================================
+      # ========================================================
       # ANALYZE
-      # ======================================================
+      # ========================================================
 
-      - name: Flutter Analyze
+      - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
         continue-on-error: true
 
 
-      # ======================================================
-      # BUILD RELEASE APK
-      # ======================================================
+      # ========================================================
+      # BUILD APK
+      # ========================================================
 
       - name: Build Release APK
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-
-          flutter build apk \
-            --release \
-            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+          flutter build apk --release \
+            --dart-define=GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
 
 
-      # ======================================================
+      # ========================================================
       # UPLOAD APK
-      # ======================================================
+      # ========================================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
